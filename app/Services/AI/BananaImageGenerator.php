@@ -39,11 +39,14 @@ class BananaImageGenerator implements ImageGeneratorInterface
         $response = Http::withHeaders([
             'Authorization' => "Bearer {$this->apiKey}",
             'Content-Type' => 'application/json',
-        ])->timeout(30)->post('https://api.nanobananaapi.ai/api/v1/nanobanana/generate', [
-            'prompt' => $prompt,
-            'type' => 'TEXTTOIAMGE',
-            'image_size' => $size,
-        ]);
+        ])->timeout(30)->post(
+            'https://api.nanobananaapi.ai/api/v1/nanobanana/'.(app()->isProduction() ? 'generate-pro' : 'generate'),
+            [
+                'prompt' => $prompt,
+                'type' => 'TEXTTOIAMGE',
+                'image_size' => $size,
+            ]
+        );
 
         if (! $response->successful()) {
             throw new \RuntimeException("Banana API error: {$response->body()}");

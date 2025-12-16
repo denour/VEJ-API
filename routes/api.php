@@ -1,9 +1,9 @@
 <?php
 
 use App\Http\Controllers\Api\BananaCallbackController;
+use App\Http\Controllers\Api\V1\ContactMessageController;
 use App\Http\Controllers\Api\V1\FaqController;
 use App\Http\Controllers\Api\V1\NewsletterSubscriptionController;
-use App\Http\Controllers\Api\V1\ContactMessageController;
 use App\Http\Controllers\Api\V1\PostController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\SpeciesController;
@@ -13,6 +13,9 @@ use Illuminate\Support\Facades\Route;
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
+
+// Webhooks
+Route::post('webhooks/banana', [BananaCallbackController::class, 'handle']);
 
 Route::prefix('v1')->group(function (): void {
     // Posts

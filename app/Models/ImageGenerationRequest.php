@@ -8,6 +8,7 @@ class ImageGenerationRequest extends Model
 {
     protected $fillable = [
         'external_id',
+        'post_id',
         'token',
         'prompt',
         'size',
@@ -30,5 +31,10 @@ class ImageGenerationRequest extends Model
     public function isPending(): bool
     {
         return in_array($this->status, ['pending', 'processing']);
+    }
+
+    public function post(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Post::class);
     }
 }

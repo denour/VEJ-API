@@ -39,11 +39,11 @@ class OpenAIImageGenerator implements ImageGeneratorInterface
 
         // Descargar y guardar localmente
         $imageContent = Http::get($imageUrl)->body();
-        $filename = 'posts/'.uniqid().'.png';
+        $filename = 'posts/'.uniqid('', true).'.png';
 
-        Storage::disk('public')->put($filename, $imageContent);
+        Storage::disk('s3')->put($filename, $imageContent, ['visibility' => 'public']);
 
-        return Storage::disk('public')->url($filename);
+        return Storage::disk('s3')->url($filename);
     }
 
     public function getProviderName(): string

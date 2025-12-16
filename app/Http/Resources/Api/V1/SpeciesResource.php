@@ -19,7 +19,7 @@ class SpeciesResource extends JsonResource
             'careLevel' => $this->care_level,
             'sunlight' => $this->sunlight,
             'watering' => $this->watering,
-            'image' => url('storage/' . $this->image),
+            'image' => $this->image,
             'images' => $this->images ?? [],
             'toxicity' => $this->toxicity,
             'growthRate' => $this->growth_rate,

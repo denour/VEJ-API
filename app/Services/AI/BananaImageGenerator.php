@@ -5,7 +5,6 @@ namespace App\Services\AI;
 use App\Contracts\AI\ImageGeneratorInterface;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Log;
 
 class BananaImageGenerator implements ImageGeneratorInterface
 {
@@ -76,11 +75,11 @@ class BananaImageGenerator implements ImageGeneratorInterface
             if ($data['data']['successFlag'] === 1) {
                 $imageUrl = $data['data']['response']['resultImageUrl'];
                 $imageContent = Http::timeout(120)->get($imageUrl)->body();
-                $filename = 'posts/'.uniqid().'.png';
+                $filename = 'posts/'.uniqid('', true).'.png';
 
-                Storage::disk('public')->put($filename, $imageContent);
+                Storage::disk('s3')->put($filename, $imageContent, ['visibility' => 'public']);
 
-                return $filename;
+                return Storage::disk('s3')->url($filename);
             }
 
             sleep($pollInterval);

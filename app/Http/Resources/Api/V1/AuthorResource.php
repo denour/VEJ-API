@@ -16,7 +16,7 @@ class AuthorResource extends JsonResource
     {
         return [
             'name' => $this->name,
-            'image' => url("storage/{$this->image}"),
+            'image' => $this->image ?? null,
             'description' => $this->description
         ];
     }

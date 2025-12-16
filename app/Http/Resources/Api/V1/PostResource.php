@@ -20,7 +20,7 @@ class PostResource extends JsonResource
             'slug' => $this->slug,
             'excerpt' => $this->excerpt,
             'content' => $this->content,
-            'coverImage' => $this->cover_image ? url('storage/' . ltrim($this->cover_image, '/')) : null,
+            'coverImage' => $this->cover_image ?? null,
             'category' => $this->category,
             'tags' => $this->tags ?? [],
             'author' => $this->whenLoaded('author', fn () => new AuthorResource($this->author)),

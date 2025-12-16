@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'banana' => [
+        'callback_url' => env('BANANA_CALLBACK_URL'),
+    ],
+
 ];

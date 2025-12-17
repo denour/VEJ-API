@@ -9,6 +9,8 @@ class ImageGenerationRequest extends Model
     protected $fillable = [
         'external_id',
         'post_id',
+        'targetable_type',
+        'targetable_id',
         'token',
         'prompt',
         'size',
@@ -36,5 +38,10 @@ class ImageGenerationRequest extends Model
     public function post(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(Post::class);
+    }
+
+    public function targetable(): \Illuminate\Database\Eloquent\Relations\MorphTo
+    {
+        return $this->morphTo();
     }
 }

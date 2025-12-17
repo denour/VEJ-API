@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\BananaCallbackController;
 use App\Http\Controllers\Api\V1\ContactMessageController;
 use App\Http\Controllers\Api\V1\FaqController;
 use App\Http\Controllers\Api\V1\NewsletterSubscriptionController;
+use App\Http\Controllers\Api\V1\SettingsController;
 use App\Http\Controllers\Api\V1\PostController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\SpeciesController;
@@ -18,6 +19,12 @@ Route::get('/user', function (Request $request) {
 Route::post('webhooks/banana', [BananaCallbackController::class, 'handle']);
 
 Route::prefix('v1')->group(function (): void {
+    // Settings
+    Route::get('settings', [SettingsController::class, 'show']);
+    Route::middleware('auth:sanctum')->group(function (): void {
+        Route::put('settings', [SettingsController::class, 'update']);
+    });
+
     // Posts
     Route::get('posts', [PostController::class, 'index']);
     Route::get('posts/{post:slug}', [PostController::class, 'show']);

@@ -71,17 +71,44 @@ class BananaCallbackController extends Controller
                 ], 422);
             }
 
-            $filename = 'posts/'.uniqid('', true).'.png';
+            // Determine target model and storage directory
+            $directory = 'misc';
+            $attribute = null;
+
+            $target = null;
+            if ($requestRecord->relationLoaded('targetable')) {
+                $target = $requestRecord->targetable;
+            } else {
+                $target = $requestRecord->targetable; // triggers lazy load
+            }
+
+            if (! $target && $requestRecord->post_id) {
+                // Backward compatibility with legacy post_id column
+                $target = Post::query()->find($requestRecord->post_id);
+            }
+
+            if ($target instanceof \App\Models\Post) {
+                $directory = 'posts';
+                $attribute = 'cover_image';
+            } elseif ($target instanceof \App\Models\Author) {
+                $directory = 'authors';
+                $attribute = 'image';
+            } elseif ($target instanceof \App\Models\Product) {
+                $directory = 'products';
+                $attribute = 'image';
+            } elseif ($target instanceof \App\Models\Species) {
+                $directory = 'species';
+                $attribute = 'image';
+            }
+
+            $filename = $directory.'/'.uniqid('', true).'.png';
             Storage::disk('s3')->put($filename, $imageResponse->body(), ['visibility' => 'public']);
 
             $publicUrl = Storage::disk('s3')->url($filename);
 
-            // Update related post cover image when available
-            if ($requestRecord->post_id) {
-                $post = Post::query()->find($requestRecord->post_id);
-                if ($post) {
-                    $post->update(['cover_image' => $publicUrl]);
-                }
+            // Update related model attribute when available
+            if ($target && $attribute) {
+                $target->update([$attribute => $publicUrl]);
             }
 
             $requestRecord->update([

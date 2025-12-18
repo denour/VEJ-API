@@ -35,57 +35,21 @@ class BananaImageGenerator implements ImageGeneratorInterface
             throw new \RuntimeException('Banana API key not configured. Set BANANA_API_KEY in your .env file.');
         }
 
-        $size = $this->getSize($options);
-
-        $isPro = app()->isProduction();
-
+        // Always use the Pro endpoint and payload format, regardless of environment.
+        // Keep the payload minimal as requested: prompt, imageUrls, resolution, callBackUrl, aspectRatio.
         $payload = [
             'prompt' => $prompt,
-            // Correct type per API docs
-            'type' => 'TEXTTOIMAGE',
-            'image_size' => $size,
+            'imageUrls' => $options['imageUrls'] ?? [''],
+            'resolution' => $options['resolution'] ?? '2K',
+            'callBackUrl' => $options['callBackUrl'] ?? 'https://example-callback.com',
+            'aspectRatio' => $options['aspectRatio'] ?? '16:9',
         ];
-
-        // Some Banana/NanoBanana deployments (production variant) require additional fields
-        // like imageUrls, resolution, callBackUrl, and aspectRatio. Provide them when
-        // targeting the pro endpoint to maintain compatibility with that version.
-        if ($isPro) {
-            $payload['imageUrls'] = $options['imageUrls'] ?? [];
-
-            // Default to '2K' unless explicitly provided via options.
-            $payload['resolution'] = $options['resolution'] ?? '2K';
-
-            // Use configured callback URL if available; keep polling logic regardless.
-            $callback = config('services.banana.callback_url');
-            if (! empty($options['callBackUrl'])) {
-                $callback = (string) $options['callBackUrl'];
-            }
-            if (! empty($callback)) {
-                $payload['callBackUrl'] = $callback;
-            }
-
-            // Derive a simple aspect ratio if not provided.
-            if (! empty($options['aspectRatio'])) {
-                $payload['aspectRatio'] = (string) $options['aspectRatio'];
-            } else {
-                // Map based on width/height intent
-                $width = $options['width'] ?? 1024;
-                $height = $options['height'] ?? 1024;
-                if ($width > $height) {
-                    $payload['aspectRatio'] = '16:9';
-                } elseif ($height > $width) {
-                    $payload['aspectRatio'] = '9:16';
-                } else {
-                    $payload['aspectRatio'] = '1:1';
-                }
-            }
-        }
 
         $response = Http::withHeaders([
             'Authorization' => "Bearer {$this->apiKey}",
             'Content-Type' => 'application/json',
         ])->timeout(30)->post(
-            'https://api.nanobananaapi.ai/api/v1/nanobanana/'.($isPro ? 'generate-pro' : 'generate'),
+            'https://api.nanobananaapi.ai/api/v1/nanobanana/generate-pro',
             $payload,
         );
 
@@ -94,7 +58,6 @@ class BananaImageGenerator implements ImageGeneratorInterface
         }
 
         $data = $response->json();
-
         $taskId = $data['data']['taskId'] ?? null;
 
         if ($taskId === null || $taskId === '') {

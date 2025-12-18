@@ -30,6 +30,7 @@ class OpenAIImageGenerator implements ImageGeneratorInterface
             'n' => 1,
         ]);
 
+
         if (! $response->successful()) {
             throw new \RuntimeException("OpenAI Image API error: {$response->body()}");
         }

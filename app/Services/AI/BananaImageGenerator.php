@@ -41,7 +41,7 @@ class BananaImageGenerator implements ImageGeneratorInterface
             'prompt' => $prompt,
             'imageUrls' => $options['imageUrls'] ?? [''],
             'resolution' => $options['resolution'] ?? '2K',
-            'callBackUrl' => $options['callBackUrl'] ?? 'https://example-callback.com',
+            'callBackUrl' => url('api/webhooks/banana'),
             'aspectRatio' => $options['aspectRatio'] ?? '16:9',
         ];
 
@@ -68,6 +68,8 @@ class BananaImageGenerator implements ImageGeneratorInterface
 
             throw new \RuntimeException($message);
         }
+
+
 
         return $taskId;
     }

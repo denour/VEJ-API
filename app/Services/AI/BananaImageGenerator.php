@@ -48,7 +48,7 @@ class BananaImageGenerator implements ImageGeneratorInterface
         $response = Http::withHeaders([
             'Authorization' => "Bearer {$this->apiKey}",
             'Content-Type' => 'application/json',
-        ])->timeout(30)->post(
+        ])->timeout(60)->post(
             'https://api.nanobananaapi.ai/api/v1/nanobanana/generate-pro',
             $payload,
         );
@@ -69,45 +69,7 @@ class BananaImageGenerator implements ImageGeneratorInterface
             throw new \RuntimeException($message);
         }
 
-        // If a callback URL is provided, return the task ID immediately (async mode)
-        // Otherwise, wait for completion (sync mode)
-        if (! empty($options['callBackUrl']) && $options['callBackUrl'] !== 'https://example-callback.com') {
-            return $taskId;
-        }
-
-        return $this->waitForCompletion($taskId, $options['timeout'] ?? 120);
-    }
-
-    private function waitForCompletion(string $taskId, int $timeoutSeconds): string
-    {
-        $startTime = time();
-        $pollInterval = 2;
-
-        while ((time() - $startTime) < $timeoutSeconds) {
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer {$this->apiKey}",
-                'Content-Type' => 'application/json',
-            ])->get("https://api.nanobananaapi.ai/api/v1/nanobanana/record-info?taskId={$taskId}");
-
-            $data = $response->json();
-            if (! $response->successful()) {
-                throw new \RuntimeException("Banana API error: {$response->body()}");
-            }
-
-            if ($data['data']['successFlag'] === 1) {
-                $imageUrl = $data['data']['response']['resultImageUrl'];
-                $imageContent = Http::timeout(120)->get($imageUrl)->body();
-                $filename = 'posts/'.uniqid('', true).'.png';
-
-                Storage::disk('s3')->put($filename, $imageContent, ['visibility' => 'public']);
-
-                return Storage::disk('s3')->url($filename);
-            }
-
-            sleep($pollInterval);
-        }
-
-        throw new \RuntimeException('Timeout waiting for image generation callback');
+        return $taskId;
     }
 
     public function getProviderName(): string

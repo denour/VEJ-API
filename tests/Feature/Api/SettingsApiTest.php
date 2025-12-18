@@ -11,7 +11,7 @@ class SettingsApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_get_settings_returns_defaults(): void
+    public function test_get_settings_returns_defaults_structure(): void
     {
         $this->getJson('/api/v1/settings')
             ->assertOk()

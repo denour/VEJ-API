@@ -10,12 +10,9 @@ return new class extends Migration
     {
         Schema::create('settings', function (Blueprint $table): void {
             $table->id();
-            $table->string('site_name')->nullable();
-            $table->string('phone')->nullable();
-            $table->string('address')->nullable();
-            $table->json('socials')->nullable();
-            $table->string('logo')->nullable();
-            $table->string('favicon')->nullable();
+            $table->string('key')->unique();
+            $table->text('value')->nullable();
+            $table->string('type')->default('string');
             $table->timestamps();
         });
     }

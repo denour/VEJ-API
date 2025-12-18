@@ -69,6 +69,12 @@ class BananaImageGenerator implements ImageGeneratorInterface
             throw new \RuntimeException($message);
         }
 
+        // If a callback URL is provided, return the task ID immediately (async mode)
+        // Otherwise, wait for completion (sync mode)
+        if (! empty($options['callBackUrl']) && $options['callBackUrl'] !== 'https://example-callback.com') {
+            return $taskId;
+        }
+
         return $this->waitForCompletion($taskId, $options['timeout'] ?? 120);
     }
 

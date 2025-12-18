@@ -73,7 +73,8 @@ class BananaCallbackController extends Controller
 
             // Determine target model and storage directory
             $directory = 'misc';
-            $attribute = null;
+            $attribute = $requestRecord->metadata['attribute'] ?? null;
+            $baseName = uniqid('', true);
 
             $target = null;
             if ($requestRecord->relationLoaded('targetable')) {
@@ -89,26 +90,36 @@ class BananaCallbackController extends Controller
 
             if ($target instanceof \App\Models\Post) {
                 $directory = 'posts';
-                $attribute = 'cover_image';
+                // Use attribute from metadata if available, otherwise default to cover_image
+                $attribute = $attribute ?? 'cover_image';
+                $baseName = \Illuminate\Support\Str::slug($target->title ?? 'post').'-'.$target->id;
             } elseif ($target instanceof \App\Models\Author) {
                 $directory = 'authors';
-                $attribute = 'image';
+                $attribute = $attribute ?? 'image';
+                $baseName = \Illuminate\Support\Str::slug($target->name ?? 'author').'-'.$target->id;
             } elseif ($target instanceof \App\Models\Product) {
                 $directory = 'products';
-                $attribute = 'image';
+                $attribute = $attribute ?? 'image';
+                $baseName = \Illuminate\Support\Str::slug($target->name ?? 'product').'-'.$target->id;
             } elseif ($target instanceof \App\Models\Species) {
                 $directory = 'species';
-                $attribute = 'image';
+                $attribute = $attribute ?? 'image';
+                $baseName = \Illuminate\Support\Str::slug($target->common_name ?? $target->scientific_name ?? 'species').'-'.$target->id;
             }
 
-            $filename = $directory.'/'.uniqid('', true).'.png';
+            $filename = $directory.'/'.$baseName.'.png';
             Storage::disk('s3')->put($filename, $imageResponse->body(), ['visibility' => 'public']);
 
             $publicUrl = Storage::disk('s3')->url($filename);
 
             // Update related model attribute when available
             if ($target && $attribute) {
-                $target->update([$attribute => $publicUrl]);
+                // Handle nested attributes for content blocks (e.g., "content.0.data.url")
+                if (str_contains($attribute, '.')) {
+                    $this->updateNestedAttribute($target, $attribute, $publicUrl);
+                } else {
+                    $target->update([$attribute => $publicUrl]);
+                }
             }
 
             $requestRecord->update([
@@ -135,5 +146,39 @@ class BananaCallbackController extends Controller
                 'message' => 'Internal error handling webhook',
             ], 500);
         }
+    }
+
+    /**
+     * Update a nested attribute in the model (e.g., "content.0.data.url").
+     */
+    private function updateNestedAttribute($model, string $path, $value): void
+    {
+        $parts = explode('.', $path);
+        $firstKey = array_shift($parts);
+
+        // Get the current value of the first key
+        $data = $model->{$firstKey};
+
+        if (! is_array($data)) {
+            return;
+        }
+
+        // Navigate to the nested location and update the value
+        $current = &$data;
+        foreach ($parts as $i => $part) {
+            if ($i === count($parts) - 1) {
+                // Last part, set the value
+                $current[$part] = $value;
+            } else {
+                // Navigate deeper
+                if (! isset($current[$part])) {
+                    return;
+                }
+                $current = &$current[$part];
+            }
+        }
+
+        // Save the updated data back to the model
+        $model->update([$firstKey => $data]);
     }
 }

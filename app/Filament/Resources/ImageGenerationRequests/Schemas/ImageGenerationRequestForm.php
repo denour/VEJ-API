@@ -16,15 +16,18 @@ class ImageGenerationRequestForm
         return $schema
             ->components([
                 TextInput::make('external_id')
+                    ->label('External ID')
                     ->default(null),
                 Select::make('post_id')
-                    ->relationship('post', 'title'),
+                    ->label('Post (Legacy)')
+                    ->relationship('post', 'title')
+                    ->nullable(),
                 TextInput::make('targetable_type')
+                    ->label('Target Type')
                     ->default(null),
                 TextInput::make('targetable_id')
+                    ->label('Target ID')
                     ->default(null),
-                TextInput::make('token')
-                    ->required(),
                 Textarea::make('prompt')
                     ->required()
                     ->columnSpanFull(),

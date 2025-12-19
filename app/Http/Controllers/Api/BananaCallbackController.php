@@ -88,6 +88,17 @@ class BananaCallbackController extends Controller
                 $target = Post::query()->find($requestRecord->post_id);
             }
 
+            Log::info('Target loaded for image generation', [
+                'request_id' => $requestRecord->id,
+                'external_id' => $requestRecord->external_id,
+                'targetable_type' => $requestRecord->targetable_type,
+                'targetable_id' => $requestRecord->targetable_id,
+                'post_id' => $requestRecord->post_id,
+                'target_class' => $target ? get_class($target) : null,
+                'target_id' => $target?->id,
+                'attribute' => $attribute,
+            ]);
+
             if ($target instanceof \App\Models\Post) {
                 $directory = 'posts';
                 // Use attribute from metadata if available, otherwise default to cover_image

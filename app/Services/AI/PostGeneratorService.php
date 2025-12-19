@@ -221,13 +221,27 @@ PROMPT;
     private function generateImagePrompt(string $description): string
     {
         $prompt = <<<PROMPT
-Based on this gardening blog description: {$description}
+You are an image-prompt generator.
 
-Create a detailed, photorealistic image of plants/gardening. Include:
-- A lush, tropical composition featuring exotic foliage with rich textures and natural imperfections.
-- Warm cinematic color grading with slightly granular film texture, consistent color standardization across the entire image.
-- Soft, diffused golden-hour lighting filtering through the leaves, creating gentle highlights and deep, warm shadows.
-- A balanced, immersive composition centered on the main plant subject, surrounded by complementary greenery and subtle depth-of-field for a natural, atmospheric look.
+TASK:
+Generate ONE single image-generation prompt in English, based on the following gardening blog description:
+
+{$description}
+
+RULES:
+- Output ONLY the final image prompt.
+- Do NOT include explanations, titles, headings, variants, bullet points, or commentary.
+- Do NOT mention tools, platforms, or engines.
+- Do NOT add negative prompts unless explicitly asked.
+- Write in a single paragraph.
+- The result must be directly usable in an image generation model.
+
+IMAGE STYLE REQUIREMENTS:
+Photorealistic image of plants or gardening with:
+lush tropical foliage, natural imperfections, cinematic warm color grading,
+subtle film grain, soft diffused golden-hour light filtering through leaves,
+balanced immersive composition centered on the main plant,
+surrounding complementary greenery and shallow depth of field.
 PROMPT;
 
         return $this->textGenerator->generate($prompt, [
@@ -333,6 +347,7 @@ PROMPT;
                     // Save taskId in ImageGenerationRequest
                     ImageGenerationRequest::query()->create([
                         'external_id' => $taskId,
+                        'post_id' => $post->id,
                         'targetable_type' => Post::class,
                         'targetable_id' => $post->id,
                         'prompt' => $imagePrompt,
@@ -381,6 +396,7 @@ PROMPT;
             // Save taskId in ImageGenerationRequest
             ImageGenerationRequest::query()->create([
                 'external_id' => $taskId,
+                'post_id' => $post->id,
                 'targetable_type' => Post::class,
                 'targetable_id' => $post->id,
                 'prompt' => $prompt,

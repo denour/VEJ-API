@@ -156,10 +156,17 @@ class BananaCallbackController extends Controller
         $parts = explode('.', $path);
         $firstKey = array_shift($parts);
 
-        // Get the current value of the first key
+        // Get the current value of the first key (fresh copy)
+        $model->refresh();
         $data = $model->{$firstKey};
 
         if (! is_array($data)) {
+            Log::warning('Nested attribute update failed: not an array', [
+                'model' => get_class($model),
+                'attribute' => $firstKey,
+                'path' => $path,
+            ]);
+
             return;
         }
 
@@ -172,13 +179,28 @@ class BananaCallbackController extends Controller
             } else {
                 // Navigate deeper
                 if (! isset($current[$part])) {
+                    Log::warning('Nested attribute path not found', [
+                        'model' => get_class($model),
+                        'path' => $path,
+                        'part' => $part,
+                        'index' => $i,
+                    ]);
+
                     return;
                 }
                 $current = &$current[$part];
             }
         }
 
-        // Save the updated data back to the model
-        $model->update([$firstKey => $data]);
+        // Force Laravel to recognize the change by setting the attribute directly
+        $model->{$firstKey} = $data;
+        $model->save();
+
+        Log::info('Nested attribute updated successfully', [
+            'model' => get_class($model),
+            'model_id' => $model->id,
+            'path' => $path,
+            'value' => $value,
+        ]);
     }
 }

@@ -5,6 +5,7 @@ namespace App\Services\AI;
 use App\Contracts\AI\ImageGeneratorInterface;
 use App\Contracts\AI\TextGeneratorInterface;
 use App\Models\Author;
+use App\Models\ImageGenerationRequest;
 use App\Models\Post;
 use Illuminate\Support\Str;
 
@@ -27,17 +28,14 @@ class PostGeneratorService
         // Paso 1: Generar la idea y estructura del post
         $structure = $this->generatePostStructure($author, $authorAttributes, $topic, $options);
 
-        // Paso 2: Generar contenido para cada bloque
-        $contentBlocks = $this->generateContentBlocks($structure['blocks'], $authorAttributes);
+        // Paso 2: Generar contenido para cada bloque (sin post aún, así que sin imágenes)
+        $contentBlocks = $this->generateContentBlocks($structure['blocks'], $authorAttributes, null);
 
         // Paso 3: Generar la tabla de contenido
         $tableOfContents = $this->generateTableOfContents($contentBlocks);
 
-        // Paso 4: Generar la imagen de portada
-        $coverImage = $this->generateCoverImage($structure['title'], $structure['excerpt']);
-
-        // Paso 5: Crear el post
-        return Post::create([
+        // Paso 4: Crear el post primero
+        $post = Post::create([
             'title' => $structure['title'],
             'slug' => Str::slug($structure['title']),
             'excerpt' => $structure['excerpt'],
@@ -46,11 +44,16 @@ class PostGeneratorService
             'category' => $structure['category'],
             'tags' => $structure['tags'],
             'author_id' => $author->id,
-            'cover_image' => $coverImage,
             'status' => 'draft',
             'featured' => false,
             'reading_time' => $this->estimateReadingTime($contentBlocks),
         ]);
+
+        // Paso 5: Generar imágenes después de crear el post
+        $this->generateCoverImage($post, $structure['title'], $structure['excerpt']);
+        $this->generateContentImages($post, $structure['blocks']);
+
+        return $post;
     }
 
     /**
@@ -130,7 +133,7 @@ PROMPT;
     /**
      * Generate content for each block.
      */
-    private function generateContentBlocks(array $blocks, array $authorAttributes): array
+    private function generateContentBlocks(array $blocks, array $authorAttributes, ?Post $post = null): array
     {
         $contentBlocks = [];
 
@@ -138,7 +141,7 @@ PROMPT;
             $contentBlocks[] = match ($block['type']) {
                 'paragraph' => $this->generateParagraph($block['description'], $authorAttributes),
                 'heading' => $this->generateHeading($block['description']),
-                'image' => $this->generateImage($block['description']),
+                'image' => $this->generateImageBlock($block['description'], $post, $index),
                 'list' => $this->generateList($block['description'], $authorAttributes),
                 'quote' => $this->generateQuote($block['description']),
                 default => $this->generateParagraph($block['description'], $authorAttributes),
@@ -202,21 +205,13 @@ PROMPT;
         ];
     }
 
-    private function generateImage(string $description): array
+    private function generateImageBlock(string $description, ?Post $post, int $blockIndex): array
     {
-        // Generar un prompt detallado para la imagen
-        $imagePrompt = $this->generateImagePrompt($description);
-
-        // Generar la imagen
-        $imageUrl = $this->imageGenerator->generate($imagePrompt, [
-            'width' => 1200,
-            'height' => 800,
-        ]);
-
+        // Return image block structure without URL - it will be populated by webhook later
         return [
             'type' => 'image',
             'data' => [
-                'url' => $imageUrl,
+                'url' => null,
                 'alt' => $description,
                 'caption' => $description,
             ],
@@ -319,9 +314,50 @@ PROMPT;
     }
 
     /**
+     * Generate images for content blocks that have type 'image'.
+     */
+    private function generateContentImages(Post $post, array $blocks): void
+    {
+        foreach ($blocks as $index => $block) {
+            if ($block['type'] === 'image') {
+                $imagePrompt = $this->generateImagePrompt($block['description']);
+
+                try {
+                    $taskId = $this->imageGenerator->generate($imagePrompt, [
+                        'aspectRatio' => '16:9',
+                        'resolution' => '2K',
+                        'imageUrls' => [''],
+                        'callBackUrl' => url('api/webhooks/banana'),
+                    ]);
+
+                    // Save taskId in ImageGenerationRequest
+                    ImageGenerationRequest::query()->create([
+                        'external_id' => $taskId,
+                        'targetable_type' => Post::class,
+                        'targetable_id' => $post->id,
+                        'prompt' => $imagePrompt,
+                        'status' => 'pending',
+                        'metadata' => [
+                            'attribute' => "content.{$index}.data.url",
+                            'model_name' => 'Post',
+                            'block_index' => $index,
+                        ],
+                    ]);
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::error('Failed to generate content image', [
+                        'post_id' => $post->id,
+                        'block_index' => $index,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+    }
+
+    /**
      * Generate cover image for the post.
      */
-    private function generateCoverImage(string $title, string $excerpt): string
+    private function generateCoverImage(Post $post, string $title, string $excerpt): void
     {
         $prompt = <<<PROMPT
 Create a captivating hero image for a gardening blog post.
@@ -334,10 +370,33 @@ Requirements:
 - Works well as a banner/cover image
 PROMPT;
 
-        return $this->imageGenerator->generate($prompt, [
-            'width' => 1200,
-            'height' => 675,
-        ]);
+        try {
+            $taskId = $this->imageGenerator->generate($prompt, [
+                'aspectRatio' => '16:9',
+                'resolution' => '2K',
+                'imageUrls' => [''],
+                'callBackUrl' => url('api/webhooks/banana'),
+            ]);
+
+            // Save taskId in ImageGenerationRequest
+            ImageGenerationRequest::query()->create([
+                'external_id' => $taskId,
+                'targetable_type' => Post::class,
+                'targetable_id' => $post->id,
+                'prompt' => $prompt,
+                'status' => 'pending',
+                'metadata' => [
+                    'attribute' => 'cover_image',
+                    'model_name' => 'Post',
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            // Log error but don't fail post creation
+            \Illuminate\Support\Facades\Log::error('Failed to generate post cover image', [
+                'post_id' => $post->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

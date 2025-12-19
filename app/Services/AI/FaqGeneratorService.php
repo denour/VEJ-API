@@ -52,6 +52,7 @@ PROMPT;
             $candidate = $m[1];
         }
         $data = json_decode($candidate, true);
+
         return is_array($data) ? $data : [];
     }
 }

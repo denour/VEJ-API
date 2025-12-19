@@ -23,5 +23,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('posts:generate-daily')
             ->dailyAt('09:00')
             ->timezone('America/Mexico_City');
+
+        // Poll pending image generation requests every 30 seconds
+        $schedule->command('images:poll-pending')
+            ->everyThirtySeconds()
+            ->withoutOverlapping();
     })
     ->create();

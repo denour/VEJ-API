@@ -3,7 +3,6 @@
 namespace App\Console\Commands;
 
 use App\Services\AI\ProductGeneratorService;
-
 use Illuminate\Console\Command;
 
 use function Laravel\Prompts\text;
@@ -44,6 +43,7 @@ class GenerateProductCommand extends Command
             return self::SUCCESS;
         } catch (\Throwable $e) {
             $this->error('❌ Error al generar el producto: '.$e->getMessage());
+
             return self::FAILURE;
         }
     }

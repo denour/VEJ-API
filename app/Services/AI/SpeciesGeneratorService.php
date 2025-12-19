@@ -4,6 +4,7 @@ namespace App\Services\AI;
 
 use App\Contracts\AI\ImageGeneratorInterface;
 use App\Contracts\AI\TextGeneratorInterface;
+use App\Models\ImageGenerationRequest;
 use App\Models\Species;
 
 class SpeciesGeneratorService
@@ -31,10 +32,8 @@ class SpeciesGeneratorService
         $toxicities = ['none', 'pets', 'humans', 'both'];
         $growthRates = ['slow', 'medium', 'fast'];
 
-        // Generate a species image
-        $image = $this->generateImage($title, $data);
-
-        $payload = [
+        // Create species first
+        $species = Species::create([
             'common_name' => $data['common_name'] ?? $title,
             'scientific_name' => $data['scientific_name'] ?? null,
             'family' => $data['family'] ?? null,
@@ -43,14 +42,15 @@ class SpeciesGeneratorService
             'care_level' => in_array($data['care_level'] ?? null, $careLevels, true) ? $data['care_level'] : 'easy',
             'sunlight' => in_array($data['sunlight'] ?? null, $levels, true) ? $data['sunlight'] : 'medium',
             'watering' => in_array($data['watering'] ?? null, $levels, true) ? $data['watering'] : 'medium',
-            'image' => $image,
-            'images' => $image ? [$image] : [],
             'toxicity' => in_array($data['toxicity'] ?? null, $toxicities, true) ? $data['toxicity'] : 'none',
             'growth_rate' => in_array($data['growth_rate'] ?? null, $growthRates, true) ? $data['growth_rate'] : 'medium',
             'max_height_cm' => isset($data['max_height_cm']) ? (int) $data['max_height_cm'] : null,
-        ];
+        ]);
 
-        return Species::create($payload);
+        // Generate a species image after creating the species
+        $this->generateImage($species, $data);
+
+        return $species;
     }
 
     private function buildPrompt(string $title): string
@@ -77,12 +77,10 @@ No incluyas texto adicional, solo el JSON.
 PROMPT;
     }
 
-    private function generateImage(string $title, array $data): ?string
+    private function generateImage(Species $species, array $data): void
     {
-        $common = $data['common_name'] ?? $title;
+        $common = $data['common_name'] ?? $species->common_name;
         $scientific = $data['scientific_name'] ?? '';
-        $sunlight = $data['sunlight'] ?? 'medium';
-        $watering = $data['watering'] ?? 'medium';
 
         $prompt = <<<PROMPT
 Photorealistic botanical portrait of a plant species.
@@ -94,12 +92,32 @@ Style: high-quality macro/close-up botanical photography, no text, no watermark
 PROMPT;
 
         try {
-            return $this->imageGenerator->generate($prompt, [
-                'width' => 1024,
-                'height' => 1024,
+            $taskId = $this->imageGenerator->generate($prompt, [
+                'aspectRatio' => '1:1',
+                'resolution' => '2K',
+                'imageUrls' => [''],
+                'callBackUrl' => url('api/webhooks/banana'),
+            ]);
+
+            // Save taskId in ImageGenerationRequest
+            ImageGenerationRequest::query()->create([
+                'external_id' => $taskId,
+                'targetable_type' => Species::class,
+                'targetable_id' => $species->id,
+                'prompt' => $prompt,
+                'status' => 'pending',
+                'metadata' => [
+                    'attribute' => 'image',
+                    'model_name' => 'Species',
+                ],
             ]);
         } catch (\Throwable $e) {
-            return null;
+            // Log error but don't fail species creation
+            \Illuminate\Support\Facades\Log::error('Failed to generate species image', [
+                'species_id' => $species->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
         }
     }
 

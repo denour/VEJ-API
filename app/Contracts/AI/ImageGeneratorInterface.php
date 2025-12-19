@@ -13,4 +13,11 @@ interface ImageGeneratorInterface
      * Get the provider name.
      */
     public function getProviderName(): string;
+
+    /**
+     * Get the status of a task from the provider.
+     *
+     * @return array{status: string, imageUrl?: string, error?: string}
+     */
+    public function getTaskStatus(string $taskId): array;
 }

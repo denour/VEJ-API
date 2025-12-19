@@ -5,6 +5,7 @@ namespace App\Services\AI;
 use App\Contracts\AI\ImageGeneratorInterface;
 use App\Contracts\AI\TextGeneratorInterface;
 use App\Models\Author;
+use App\Models\ImageGenerationRequest;
 
 class AuthorGeneratorService
 {
@@ -16,14 +17,18 @@ class AuthorGeneratorService
     public function generate(string $name): Author
     {
         $content = $this->generateDescriptions($name);
-        $image = $this->generateAvatar($name);
 
-        return Author::create([
+        // Create author first
+        $author = Author::create([
             'name' => $name,
-            'image' => $image,
             'description' => $content['description'] ?? null,
             'detailed_description' => $content['detailed_description'] ?? null,
         ]);
+
+        // Generate avatar after creating the author
+        $this->generateAvatar($author);
+
+        return $author;
     }
 
     private function generateDescriptions(string $name): array
@@ -49,24 +54,44 @@ PROMPT;
             $candidate = $m[1];
         }
         $data = json_decode($candidate, true);
+
         return is_array($data) ? $data : [];
     }
 
-    private function generateAvatar(string $name): ?string
+    private function generateAvatar(Author $author): void
     {
         $prompt = <<<PROMPT
-Professional studio headshot of a gardening expert named {$name}.
+Professional studio headshot of a gardening expert named {$author->name}.
 Style: clean portrait, soft diffused lighting, subtle smile, shallow depth of field, neutral background.
 No text, no watermark, high detail, natural look.
 PROMPT;
 
         try {
-            return $this->imageGenerator->generate($prompt, [
-                'width' => 768,
-                'height' => 768,
+            $taskId = $this->imageGenerator->generate($prompt, [
+                'aspectRatio' => '1:1',
+                'resolution' => '2K',
+                'imageUrls' => [''],
+                'callBackUrl' => url('api/webhooks/banana'),
+            ]);
+
+            // Save taskId in ImageGenerationRequest
+            ImageGenerationRequest::query()->create([
+                'external_id' => $taskId,
+                'targetable_type' => Author::class,
+                'targetable_id' => $author->id,
+                'prompt' => $prompt,
+                'status' => 'pending',
+                'metadata' => [
+                    'attribute' => 'image',
+                    'model_name' => 'Author',
+                ],
             ]);
         } catch (\Throwable $e) {
-            return null;
+            // Log error but don't fail author creation
+            \Illuminate\Support\Facades\Log::error('Failed to generate author avatar', [
+                'author_id' => $author->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }

@@ -14,7 +14,6 @@ class GenerateSpeciesCommand extends Command
     protected $description = 'Generar una Especie automáticamente con IA a partir de un título';
 
     public function handle(SpeciesGeneratorService $service): int
-
     {
         $title = (string) ($this->option('title') ?? '');
         if ($title === '') {
@@ -43,6 +42,7 @@ class GenerateSpeciesCommand extends Command
             return self::SUCCESS;
         } catch (\Throwable $e) {
             $this->error('❌ Error al generar la especie: '.$e->getMessage());
+
             return self::FAILURE;
         }
     }

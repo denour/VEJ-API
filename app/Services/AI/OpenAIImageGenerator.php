@@ -30,7 +30,6 @@ class OpenAIImageGenerator implements ImageGeneratorInterface
             'n' => 1,
         ]);
 
-
         if (! $response->successful()) {
             throw new \RuntimeException("OpenAI Image API error: {$response->body()}");
         }
@@ -50,6 +49,17 @@ class OpenAIImageGenerator implements ImageGeneratorInterface
     public function getProviderName(): string
     {
         return 'OpenAI DALL-E';
+    }
+
+    public function getTaskStatus(string $taskId): array
+    {
+        // OpenAI generates images synchronously, so this method is not needed
+        // Return completed status by default
+        return [
+            'status' => 'completed',
+            'imageUrl' => null,
+            'error' => 'OpenAI does not support async task status checking',
+        ];
     }
 
     private function getSize(array $options): string

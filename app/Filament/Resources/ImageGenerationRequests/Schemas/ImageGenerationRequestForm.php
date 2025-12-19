@@ -5,8 +5,8 @@ namespace App\Filament\Resources\ImageGenerationRequests\Schemas;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Schema;
 
 class ImageGenerationRequestForm
@@ -33,11 +33,11 @@ class ImageGenerationRequestForm
                     ->default('1024x1024'),
                 Select::make('status')
                     ->options([
-            'pending' => 'Pending',
-            'processing' => 'Processing',
-            'completed' => 'Completed',
-            'failed' => 'Failed',
-        ])
+                        'pending' => 'Pending',
+                        'processing' => 'Processing',
+                        'completed' => 'Completed',
+                        'failed' => 'Failed',
+                    ])
                     ->default('pending')
                     ->required(),
                 FileUpload::make('image_path')

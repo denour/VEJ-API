@@ -2,9 +2,9 @@
 
 namespace Tests\Feature\Api;
 
+use App\Models\Author;
 use App\Models\ImageGenerationRequest;
 use App\Models\Post;
-use App\Models\Author;
 use App\Models\Product;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;

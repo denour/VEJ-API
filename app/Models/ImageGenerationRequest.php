@@ -11,7 +11,6 @@ class ImageGenerationRequest extends Model
         'post_id',
         'targetable_type',
         'targetable_id',
-        'token',
         'prompt',
         'size',
         'status',

@@ -32,12 +32,9 @@ class GenerateModelImage implements ShouldQueue
             // Generate prompt if not provided
             $finalPrompt = $this->prompt ?? $this->generatePrompt();
 
-            // Get callback URL for webhook
-            $callbackUrl = route('api.banana.callback');
-
             // Generate image using Banana API
             $response = $generator->generate($finalPrompt, [
-                'callBackUrl' => $callbackUrl,
+                'callBackUrl' => url('api/webhooks/banana'),
                 'aspectRatio' => '16:9',
                 'resolution' => '2K',
                 'imageUrls' => [''],

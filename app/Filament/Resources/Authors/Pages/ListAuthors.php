@@ -4,8 +4,8 @@ namespace App\Filament\Resources\Authors\Pages;
 
 use App\Filament\Resources\Authors\AuthorResource;
 use App\Services\AI\AuthorGeneratorService;
-use Filament\Actions\CreateAction;
 use Filament\Actions\Action;
+use Filament\Actions\CreateAction;
 use Filament\Forms;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;

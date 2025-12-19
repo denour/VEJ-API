@@ -4,7 +4,6 @@ namespace App\Services\AI;
 
 use App\Contracts\AI\ImageGeneratorInterface;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Storage;
 
 class BananaImageGenerator implements ImageGeneratorInterface
 {
@@ -58,6 +57,7 @@ class BananaImageGenerator implements ImageGeneratorInterface
         }
 
         $data = $response->json();
+
         $taskId = $data['data']['taskId'] ?? null;
 
         if ($taskId === null || $taskId === '') {
@@ -69,13 +69,47 @@ class BananaImageGenerator implements ImageGeneratorInterface
             throw new \RuntimeException($message);
         }
 
-
-
         return $taskId;
     }
 
     public function getProviderName(): string
     {
         return 'Banana';
+    }
+
+    /**
+     * Get the status of a task from Banana API.
+     *
+     * @return array{status: string, imageUrl?: string, error?: string}
+     */
+    public function getTaskStatus(string $taskId): array
+    {
+        if (! $this->apiKey) {
+            throw new \RuntimeException('Banana API key not configured. Set BANANA_API_KEY in your .env file.');
+        }
+
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$this->apiKey}",
+            'Content-Type' => 'application/json',
+        ])->timeout(30)->get(
+            "https://api.nanobananaapi.ai/api/v1/nanobanana/record-info?taskId={$taskId}"
+        );
+
+        if (! $response->successful()) {
+            throw new \RuntimeException("Banana API error: {$response->body()}");
+        }
+
+        $data = $response->json();
+
+        // Extract status and image URL from response
+        $status = $data['msg'] ?? $data['msg'] ?? 'unknown';
+        $imageUrl = $data['data']['response']['resultImageUrl'] ?? $data['resultImageUrl'] ?? null;
+        $error = $data['data']['error'] ?? $data['error'] ?? null;
+
+        return [
+            'status' => $status,
+            'imageUrl' => $imageUrl,
+            'error' => $error,
+        ];
     }
 }

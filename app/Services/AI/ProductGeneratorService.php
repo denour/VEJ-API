@@ -98,7 +98,7 @@ PROMPT;
         $scientific = $data['scientific_name'] ?? '';
         $condition = $data['condition'] ?? 'young';
         $size = $data['size'] ?? 'medium';
-        $isRare = !empty($data['is_rare']);
+        $isRare = ! empty($data['is_rare']);
 
         $rareText = $isRare ? 'rare cultivar' : '';
 

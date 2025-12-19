@@ -19,7 +19,7 @@ class CreateSpeciesTest extends TestCase
             'scientific_name' => 'Ficus lyrata',
             'family' => 'Moraceae',
             'origin' => 'África Occidental',
-            'description' => 'Planta ornamental popular en interiores.'
+            'description' => 'Planta ornamental popular en interiores.',
         ];
 
         Livewire::test(CreateSpecies::class)

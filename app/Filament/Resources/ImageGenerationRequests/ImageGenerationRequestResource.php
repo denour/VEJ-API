@@ -34,6 +34,13 @@ class ImageGenerationRequestResource extends Resource
         return ImageGenerationRequestsTable::configure($table);
     }
 
+    public static function configure(Table $table): Table
+    {
+        return $table
+            ->poll('20s')
+            ->defaultSort('created_at', 'desc');
+    }
+
     public static function getRelations(): array
     {
         return [

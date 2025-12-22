@@ -235,6 +235,7 @@ RULES:
 - Do NOT add negative prompts unless explicitly asked.
 - Write in a single paragraph.
 - The result must be directly usable in an image generation model.
+- No Text, no watermark, no formatting.
 
 IMAGE STYLE REQUIREMENTS:
 Photorealistic image of plants or gardening with:
@@ -383,6 +384,7 @@ Requirements:
 - Warm, inviting color palette with natural lighting
 - Cinematic composition with depth and visual interest
 - Works well as a banner/cover image
+- No text, no watermark
 PROMPT;
 
         try {

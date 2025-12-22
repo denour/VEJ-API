@@ -56,8 +56,9 @@ class SpeciesGeneratorService
     private function buildPrompt(string $title): string
     {
         return <<<PROMPT
-Genera la ficha de una especie vegetal relacionada con "{$title}" para un catálogo de jardinería.
-
+Genera la ficha de una especie vegetal nombre "{$title}" para un catálogo de jardinería.
+- Nombre Comercial o botanico
+- Genera nombre botanico real
 Responde SOLO con JSON válido con esta forma exacta:
 {
   "common_name": string, // puede ser igual al título

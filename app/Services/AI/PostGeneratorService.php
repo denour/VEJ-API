@@ -80,7 +80,8 @@ class PostGeneratorService
     private function generatePostStructure(Author $author, array $authorAttributes, ?string $topic, array $options): array
     {
         $topicInstruction = $topic ? "El tema del post debe ser: {$topic}" : 'Elige un tema relevante';
-        $themesString = implode(', ', $authorAttributes['themes']);
+        $themesString = is_array($authorAttributes['themes']) ? implode(', ', $authorAttributes['themes']) : $authorAttributes['themes'];
+        $editorialFocus = is_array($authorAttributes['editorial_focus']) ? implode(', ', $authorAttributes['editorial_focus']) : $authorAttributes['editorial_focus'];
 
         $lengthInstruction = match ($options['length'] ?? 'medium') {
             'short' => 'El post debe ser corto (4-5 bloques)',
@@ -97,7 +98,7 @@ IMPORTANTE - El autor tiene estas características que DEBES reflejar:
 - Personalidad: {$authorAttributes['personality']}
 - Estilo de escritura: {$authorAttributes['writing_style']}
 - Temas principales: {$themesString}
-- Foco Editorial: {$authorAttributes['editorial_focus']}
+- Foco Editorial: {$editorialFocus}
 {$topicInstruction}
 
 Responde ÚNICAMENTE en formato JSON válido con la siguiente estructura:

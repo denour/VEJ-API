@@ -64,8 +64,6 @@ class PostController extends Controller
         $related = Post::query()
             ->whereKeyNot($post->getKey())
             ->where('status', 'published')
-            ->whereNotNull('published_at')
-            ->latest('published_at')
             ->latest('created_at')
             ->with('author')
             ->limit(3)

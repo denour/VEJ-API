@@ -38,7 +38,7 @@ class ImageGenerationRequestResource extends Resource
     {
         return $table
             ->poll('20s')
-            ->defaultSort('created_at', 'desc');
+            ->defaultSort('created_at', 'asc');
     }
 
     public static function getRelations(): array

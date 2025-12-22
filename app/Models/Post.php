@@ -51,14 +51,14 @@ class Post extends Model
         });
     }
 
-    protected function coverImage(): Attribute
-    {
-        return Attribute::make(
-            get: fn (?string $value) => $value ? Storage::disk('s3')->url($value) : null,
-            set: fn (?string $value) => $value,
-        );
-    }
-
+//    protected function coverImage(): Attribute
+//    {
+//        return Attribute::make(
+//            get: fn (?string $value) => $value ? Storage::disk('s3')->url($value) : null,
+//            set: fn (?string $value) => $value,
+//        );
+//    }
+//
     public function author(): BelongsTo
     {
         return $this->belongsTo(Author::class);

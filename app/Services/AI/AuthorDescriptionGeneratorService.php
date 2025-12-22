@@ -44,8 +44,19 @@ PROMPT;
     /**
      * Extract attributes from a detailed description.
      */
-    public function extractAttributes(string $detailedDescription): array
+    public function extractAttributes(string|array $detailedDescription): array
     {
+        // Si ya es un array (desde el modelo con cast), usarlo directamente
+        if (is_array($detailedDescription)) {
+            return [
+                'tone' => $detailedDescription['tone'] ?? 'conversacional y educativo',
+                'personality' => $detailedDescription['personality'] ?? 'entusiasta',
+                'writing_style' => $detailedDescription['writing_style'] ?? 'claro y accesible',
+                'themes' => $detailedDescription['themes'] ?? ['jardinería', 'plantas'],
+                'editorial_focus' => $detailedDescription['editorial_focus'] ?? 'educación práctica',
+            ];
+        }
+
         // Intentar decodificar como JSON primero (nuevo formato)
         $data = json_decode($detailedDescription, true);
 
@@ -53,7 +64,9 @@ PROMPT;
             return [
                 'tone' => $data['tone'] ?? 'conversacional y educativo',
                 'personality' => $data['personality'] ?? 'entusiasta',
+                'writing_style' => $data['writing_style'] ?? 'claro y accesible',
                 'themes' => $data['themes'] ?? ['jardinería', 'plantas'],
+                'editorial_focus' => $data['editorial_focus'] ?? 'educación práctica',
             ];
         }
 
@@ -62,7 +75,9 @@ PROMPT;
         $attributes = [
             'tone' => 'conversacional y educativo',
             'personality' => 'entusiasta',
+            'writing_style' => 'claro y accesible',
             'themes' => ['jardinería', 'plantas'],
+            'editorial_focus' => 'educación práctica',
         ];
 
         foreach ($lines as $line) {
@@ -73,7 +88,7 @@ PROMPT;
                 $attributes['personality'] = trim(str_replace('Personalidad:', '', $line)) ?: $attributes['personality'];
             } elseif (str_starts_with($line, 'Temas:')) {
                 $themesString = trim(str_replace('Temas:', '', $line));
-                if (!empty($themesString)) {
+                if (! empty($themesString)) {
                     $attributes['themes'] = array_map('trim', explode(',', $themesString));
                 }
             }

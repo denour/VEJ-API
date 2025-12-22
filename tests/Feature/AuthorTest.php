@@ -51,7 +51,13 @@ class AuthorTest extends TestCase
 
     public function test_can_create_author_with_detailed_description(): void
     {
-        $detailedDescription = 'Tono: Conversacional y cercano. Personalidad: Entusiasta y educativo. Temas: Plantas tropicales, cuidados básicos, jardinería urbana.';
+        $detailedDescription = [
+            'tone' => 'Conversacional y cercano',
+            'personality' => 'Entusiasta y educativo',
+            'writing_style' => 'Claro y accesible',
+            'themes' => ['Plantas tropicales', 'cuidados básicos', 'jardinería urbana'],
+            'editorial_focus' => 'Educación práctica',
+        ];
 
         $author = Author::create([
             'name' => 'María García',
@@ -62,10 +68,11 @@ class AuthorTest extends TestCase
 
         $this->assertDatabaseHas('authors', [
             'name' => 'María García',
-            'detailed_description' => $detailedDescription,
         ]);
 
         $this->assertEquals($detailedDescription, $author->detailed_description);
+        $this->assertEquals('Conversacional y cercano', $author->detailed_description['tone']);
+        $this->assertEquals('Entusiasta y educativo', $author->detailed_description['personality']);
     }
 
     public function test_author_can_have_nullable_detailed_description(): void

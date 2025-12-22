@@ -11,9 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('image_generation_requests', function (Blueprint $table) {
-            $table->dropColumn('token');
-        });
+        if (Schema::hasColumn('image_generation_requests', 'token')) {
+            Schema::table('image_generation_requests', function (Blueprint $table) {
+                $table->dropUnique(['token']);
+            });
+
+            Schema::table('image_generation_requests', function (Blueprint $table) {
+                $table->dropColumn('token');
+            });
+        }
     }
 
     /**

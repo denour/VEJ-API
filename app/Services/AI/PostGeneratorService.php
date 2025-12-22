@@ -65,7 +65,9 @@ class PostGeneratorService
             return [
                 'tone' => 'conversacional y educativo',
                 'personality' => 'entusiasta',
+                'writing_style' => 'claro y accesible',
                 'themes' => ['jardinería', 'plantas'],
+                'editorial_focus' => 'educación práctica',
             ];
         }
 
@@ -143,7 +145,7 @@ PROMPT;
             $contentBlocks[] = match ($block['type']) {
                 'heading' => $this->generateHeading($block['description']),
                 'image' => $this->generateImageBlock($block['description']),
-//                'list' => $this->generateList($block['description'], $authorAttributes),
+                //                'list' => $this->generateList($block['description'], $authorAttributes),
                 'quote' => $this->generateQuote($block['description']),
                 default => $this->generateParagraph($block['description'], $authorAttributes),
             };

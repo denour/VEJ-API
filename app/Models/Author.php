@@ -17,6 +17,13 @@ class Author extends Model
         'detailed_description',
     ];
 
+    protected function casts(): array
+    {
+        return [
+            'detailed_description' => 'array',
+        ];
+    }
+
     public function posts(): HasMany
     {
         return $this->hasMany(Post::class);

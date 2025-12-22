@@ -36,34 +36,34 @@ class Species extends Model
         ];
     }
 
-    protected function image(): Attribute
-    {
-        return Attribute::make(
-            get: fn (?string $value) => $value ? Storage::disk('s3')->url($value) : null,
-            set: fn (?string $value) => $value,
-        );
-    }
+//    protected function image(): Attribute
+//    {
+//        return Attribute::make(
+//            get: fn (?string $value) => $value ? Storage::disk('s3')->url($value) : null,
+//            set: fn (?string $value) => $value,
+//        );
+//    }
 
-    protected function images(): Attribute
-    {
-        return Attribute::make(
-            get: function (?string $value): ?array {
-                if (! $value) {
-                    return null;
-                }
-
-                $paths = json_decode($value, true);
-
-                if (! is_array($paths)) {
-                    return null;
-                }
-
-                return array_map(
-                    fn ($path) => Storage::disk('s3')->url($path),
-                    $paths
-                );
-            },
-            set: fn (?array $value): ?string => $value ? json_encode($value) : null,
-        );
-    }
+//    protected function images(): Attribute
+//    {
+//        return Attribute::make(
+//            get: function (?string $value): ?array {
+//                if (! $value) {
+//                    return null;
+//                }
+//
+//                $paths = json_decode($value, true);
+//
+//                if (! is_array($paths)) {
+//                    return null;
+//                }
+//
+//                return array_map(
+//                    fn ($path) => Storage::disk('s3')->url($path),
+//                    $paths
+//                );
+//            },
+//            set: fn (?array $value): ?string => $value ? json_encode($value) : null,
+//        );
+//    }
 }

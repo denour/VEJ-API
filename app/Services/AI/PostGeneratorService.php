@@ -93,8 +93,9 @@ El post debe ser educativo, práctico y atractivo para aficionados a la jardiner
 IMPORTANTE - El autor tiene estas características que DEBES reflejar:
 - Tono: {$authorAttributes['tone']}
 - Personalidad: {$authorAttributes['personality']}
+- Estilo de escritura: {$authorAttributes['writing_style']}
 - Temas principales: {$themesString}
-
+- Foco Editorial: {$authorAttributes['editorial_focus']}
 {$topicInstruction}
 
 Responde ÚNICAMENTE en formato JSON válido con la siguiente estructura:
@@ -160,6 +161,8 @@ Genera un párrafo para un blog de jardinería basado en esta descripción:
 IMPORTANTE - Escribe con estas características del autor:
 - Tono: {$authorAttributes['tone']}
 - Personalidad: {$authorAttributes['personality']}
+- Foco Editorial: {$authorAttributes['editorial_focus']}
+- Estilo de escritura: {$authorAttributes['writing_style']}
 
 El párrafo debe ser:
 - Informativo y práctico

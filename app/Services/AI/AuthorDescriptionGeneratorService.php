@@ -46,23 +46,36 @@ PROMPT;
      */
     public function extractAttributes(string $detailedDescription): array
     {
-        // Parse the structured format
+        // Intentar decodificar como JSON primero (nuevo formato)
+        $data = json_decode($detailedDescription, true);
+
+        if (json_last_error() === JSON_ERROR_NONE && is_array($data)) {
+            return [
+                'tone' => $data['tone'] ?? 'conversacional y educativo',
+                'personality' => $data['personality'] ?? 'entusiasta',
+                'themes' => $data['themes'] ?? ['jardinería', 'plantas'],
+            ];
+        }
+
+        // Fallback: Procesar el formato de texto estructurado antiguo
         $lines = explode("\n", $detailedDescription);
         $attributes = [
-            'tone' => '',
-            'personality' => '',
-            'themes' => [],
+            'tone' => 'conversacional y educativo',
+            'personality' => 'entusiasta',
+            'themes' => ['jardinería', 'plantas'],
         ];
 
         foreach ($lines as $line) {
             $line = trim($line);
             if (str_starts_with($line, 'Tono:')) {
-                $attributes['tone'] = trim(str_replace('Tono:', '', $line));
+                $attributes['tone'] = trim(str_replace('Tono:', '', $line)) ?: $attributes['tone'];
             } elseif (str_starts_with($line, 'Personalidad:')) {
-                $attributes['personality'] = trim(str_replace('Personalidad:', '', $line));
+                $attributes['personality'] = trim(str_replace('Personalidad:', '', $line)) ?: $attributes['personality'];
             } elseif (str_starts_with($line, 'Temas:')) {
                 $themesString = trim(str_replace('Temas:', '', $line));
-                $attributes['themes'] = array_map('trim', explode(',', $themesString));
+                if (!empty($themesString)) {
+                    $attributes['themes'] = array_map('trim', explode(',', $themesString));
+                }
             }
         }
 

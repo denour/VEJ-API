@@ -22,7 +22,9 @@ class AuthorGeneratorService
         $author = Author::create([
             'name' => $name,
             'description' => $content['description'] ?? null,
-            'detailed_description' => $content['detailed_description'] ?? null,
+            'detailed_description' => isset($content['detailed_description'])
+                ? json_encode($content['detailed_description'], JSON_UNESCAPED_UNICODE)
+                : null,
         ]);
 
         // Generate avatar after creating the author
@@ -34,13 +36,54 @@ class AuthorGeneratorService
     private function generateDescriptions(string $name): array
     {
         $prompt = <<<PROMPT
-Eres un editor de un blog de jardinería llamado "Vida en el Jardín".
-Genera descripciones para el autor con nombre: {$name}
+Eres el editor jefe y curador de contenido del blog de jardinería "Vida en el Jardín",
+un proyecto editorial en español enfocado en botánica, jardinería consciente,
+cultivo doméstico, plantas nativas y educación ambiental.
 
-Responde SOLO con JSON válido usando esta estructura:
+Tu tarea es generar la biografía editorial de un autor del blog con el nombre: {$name}.
+
+El autor debe sentirse real, humano y coherente con el espíritu del proyecto:
+- Cercano, didáctico y apasionado por las plantas.
+- Con experiencia práctica en jardinería, no solo teórica.
+- Con interés por la sostenibilidad, el respeto a la naturaleza y el aprendizaje continuo.
+- Escritura clara, accesible y honesta, evitando tecnicismos innecesarios.
+
+Los temas (`themes`) deben ser múltiples y variados, siempre relacionados con
+jardinería y plantas, pero pueden incluir subtemas como cultivo, propagación,
+cuidado, diseño de jardines, plantas nativas, huertos, ecología, botánica básica,
+plantas medicinales, experiencias personales u observación de la naturaleza.
+
+Responde EXCLUSIVAMENTE con JSON válido y bien formado, sin texto adicional,
+usando exactamente esta estructura:
+
 {
-  "description": "Resumen corto (1-2 frases) en español",
-  "detailed_description": "Perfil más completo (5-8 frases) en español, tono cercano y experto en jardinería"
+  "description": "Resumen breve del autor en 1–2 frases, en español, tono cercano y natural.",
+  "detailed_description": {
+    "role": "Rol del autor dentro de Vida en el Jardín",
+    "bio_long": "Biografía extensa en párrafo completo, con narrativa humana y pasión por las plantas.",
+    "areas_of_expertise": [
+      "Lista de áreas de especialización relacionadas con jardinería y botánica"
+    ],
+    "writing_style": "Descripción del estilo de escritura del autor",
+    "editorial_focus": [
+      "Temas principales que aborda en sus artículos"
+    ],
+    "themes": [
+      "Lista de múltiples temas relacionados con jardinería y plantas"
+    ],
+    "tone": "conversacional y educativo",
+    "personality": "entusiasta",
+    "values": [
+      "Valores personales y editoriales relacionados con la naturaleza y el cuidado del entorno"
+    ],
+    "experience_level": "Nivel de experiencia del autor",
+    "target_audience": "Tipo de lectores a los que se dirige",
+    "location_context": "Contexto geográfico o climático desde el cual escribe (si aplica)",
+    "signature_phrase": "Frase o enfoque característico del autor",
+    "seo_keywords": [
+      "Palabras clave asociadas al autor y su contenido"
+    ]
+  }
 }
 PROMPT;
 

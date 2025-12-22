@@ -17,9 +17,10 @@ class AuthorForm
             ->components([
                 FileUpload::make('image')
                     ->image()
-                    ->disk('public')
+                    ->disk('s3')
                     ->visibility('public')
-                    ->directory('authors'),
+                    ->directory('authors')
+                    ->storeFileNamesIn('image_filename'),
                 TextInput::make('name')
                     ->required(),
                 Textarea::make('description')

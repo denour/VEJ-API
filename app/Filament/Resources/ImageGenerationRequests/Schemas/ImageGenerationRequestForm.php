@@ -44,9 +44,15 @@ class ImageGenerationRequestForm
                     ->default('pending')
                     ->required(),
                 FileUpload::make('image_path')
-                    ->image(),
+                    ->image()
+                    ->disk('s3')
+                    ->visibility('public')
+                    ->storeFileNamesIn('image_path_filename'),
                 FileUpload::make('image_url')
-                    ->image(),
+                    ->image()
+                    ->disk('s3')
+                    ->visibility('public')
+                    ->storeFileNamesIn('image_url_filename'),
                 Textarea::make('error_message')
                     ->label('Error Message')
                     ->default(null)

@@ -35,9 +35,9 @@ class ProductResource extends Resource
                 Section::make('Información básica')->columnSpan(8)->schema([
                     Forms\Components\TextInput::make('name')->label('Nombre')->required(),
                     Forms\Components\TextInput::make('scientific_name')->label('Nombre científico'),
-                    Forms\Components\FileUpload::make('image')->label('Imagen principal')->image()->disk('public')->visibility('public'),
+                    Forms\Components\FileUpload::make('image')->label('Imagen principal')->image()->disk('s3')->visibility('public')->storeFileNamesIn('image_filename'),
                     Forms\Components\FileUpload::make('images')->label('Galería')
-                        ->image()->multiple()->disk('public')->visibility('public'),
+                        ->image()->multiple()->disk('s3')->visibility('public')->storeFileNamesIn('images_filenames'),
                 ]),
                 Section::make('Detalles botánicos')->columnSpan(4)->schema([
                     Forms\Components\Select::make('care_level')->label('Nivel de cuidado')

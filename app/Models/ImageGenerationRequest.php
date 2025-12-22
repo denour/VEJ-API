@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 class ImageGenerationRequest extends Model
 {
@@ -23,6 +25,22 @@ class ImageGenerationRequest extends Model
     protected $casts = [
         'metadata' => 'array',
     ];
+
+    protected function imagePath(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value) => $value ? Storage::disk('s3')->url($value) : null,
+            set: fn (?string $value) => $value,
+        );
+    }
+
+    protected function imageUrl(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value) => $value ? Storage::disk('s3')->url($value) : null,
+            set: fn (?string $value) => $value,
+        );
+    }
 
     public function isCompleted(): bool
     {

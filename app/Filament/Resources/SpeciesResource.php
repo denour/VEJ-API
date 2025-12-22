@@ -37,8 +37,8 @@ class SpeciesResource extends Resource
                     Forms\Components\TextInput::make('family')->label('Familia'),
                     Forms\Components\TextInput::make('origin')->label('Origen'),
                     Forms\Components\Textarea::make('description')->label('Descripción')->rows(6),
-                    Forms\Components\FileUpload::make('image')->label('Imagen')->image()->disk('public')->visibility('public'),
-                    Forms\Components\FileUpload::make('images')->label('Galería')->image()->multiple()->disk('public')->visibility('public'),
+                    Forms\Components\FileUpload::make('image')->label('Imagen')->image()->disk('s3')->visibility('public')->storeFileNamesIn('image_filename'),
+                    Forms\Components\FileUpload::make('images')->label('Galería')->image()->multiple()->disk('s3')->visibility('public')->storeFileNamesIn('images_filenames'),
                 ]),
                 Section::make('Cuidado')->columnSpan(4)->schema([
                     Forms\Components\Select::make('care_level')->label('Nivel de cuidado')

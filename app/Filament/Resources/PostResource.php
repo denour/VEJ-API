@@ -75,11 +75,11 @@ class PostResource extends Resource
                                 ->createOptionForm([
                                     Forms\Components\TextInput::make('name')->required(),
                                     Forms\Components\FileUpload::make('image')
-                                        ->image()->disk('public')->visibility('public'),
+                                        ->image()->disk('s3')->visibility('public')->storeFileNamesIn('image_filename'),
                                     Forms\Components\Textarea::make('description')->rows(3),
                                 ]),
                             Forms\Components\FileUpload::make('cover_image')->label('Imagen de portada')
-                                ->image()->disk('public')->visibility('public'),
+                                ->image()->disk('s3')->visibility('public')->storeFileNamesIn('cover_image_filename'),
                             Forms\Components\Toggle::make('featured')->label('Destacado')->default(false),
                             Forms\Components\Select::make('status')->options([
                                 'draft' => 'Borrador',

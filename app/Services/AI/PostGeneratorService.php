@@ -29,7 +29,7 @@ class PostGeneratorService
         $structure = $this->generatePostStructure($author, $authorAttributes, $topic, $options);
 
         // Paso 2: Generar contenido para cada bloque (sin post aún, así que sin imágenes)
-        $contentBlocks = $this->generateContentBlocks($structure['blocks'], $authorAttributes, null);
+        $contentBlocks = $this->generateContentBlocks($structure['blocks'], $authorAttributes);
 
         // Paso 3: Generar la tabla de contenido
         $tableOfContents = $this->generateTableOfContents($contentBlocks);
@@ -106,6 +106,7 @@ Responde ÚNICAMENTE en formato JSON válido con la siguiente estructura:
     "blocks": [
         {
             "type": "paragraph|heading|image|list|quote",
+            "title: "titulo del bloque.",
             "description": "Descripción de qué debe contener este bloque"
         }
     ]
@@ -115,7 +116,7 @@ Responde ÚNICAMENTE en formato JSON válido con la siguiente estructura:
 - Al menos un heading
 - Al menos 2-3 párrafos
 - Al menos 1 imagen
-- Opcionalmente: lista o quote
+- Al menos 3 bloques de lista
 PROMPT;
 
         $response = $this->textGenerator->generate($prompt, [
@@ -133,16 +134,15 @@ PROMPT;
     /**
      * Generate content for each block.
      */
-    private function generateContentBlocks(array $blocks, array $authorAttributes, ?Post $post = null): array
+    private function generateContentBlocks(array $blocks, array $authorAttributes): array
     {
         $contentBlocks = [];
 
         foreach ($blocks as $index => $block) {
             $contentBlocks[] = match ($block['type']) {
-                'paragraph' => $this->generateParagraph($block['description'], $authorAttributes),
                 'heading' => $this->generateHeading($block['description']),
-                'image' => $this->generateImageBlock($block['description'], $post, $index),
-                'list' => $this->generateList($block['description'], $authorAttributes),
+                'image' => $this->generateImageBlock($block['description']),
+//                'list' => $this->generateList($block['description'], $authorAttributes),
                 'quote' => $this->generateQuote($block['description']),
                 default => $this->generateParagraph($block['description'], $authorAttributes),
             };
@@ -205,7 +205,7 @@ PROMPT;
         ];
     }
 
-    private function generateImageBlock(string $description, ?Post $post, int $blockIndex): array
+    private function generateImageBlock(string $description): array
     {
         // Return image block structure without URL - it will be populated by webhook later
         return [

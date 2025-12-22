@@ -38,7 +38,6 @@ class Product extends Model
     protected function casts(): array
     {
         return [
-            'images' => 'array',
             'is_rare' => 'boolean',
             'price' => 'decimal:2',
             'rating' => 'decimal:2',
@@ -59,11 +58,23 @@ class Product extends Model
     protected function images(): Attribute
     {
         return Attribute::make(
-            get: fn (?array $value) => $value ? array_map(
-                fn ($path) => Storage::disk('s3')->url($path),
-                $value
-            ) : null,
-            set: fn (?array $value) => $value,
+            get: function (?string $value): ?array {
+                if (! $value) {
+                    return null;
+                }
+
+                $paths = json_decode($value, true);
+
+                if (! is_array($paths)) {
+                    return null;
+                }
+
+                return array_map(
+                    fn ($path) => Storage::disk('s3')->url($path),
+                    $paths
+                );
+            },
+            set: fn (?array $value): ?string => $value ? json_encode($value) : null,
         );
     }
 

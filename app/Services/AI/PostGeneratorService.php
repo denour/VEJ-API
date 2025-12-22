@@ -155,8 +155,9 @@ PROMPT;
         return $contentBlocks;
     }
 
-    private function generateParagraph(string $description, array $authorAttributes): array
+    private function generateParagraph(string $description, array $authorAttributes, ): array
     {
+        $editorialFocus = is_array($authorAttributes['editorial_focus']) ? implode(', ', $authorAttributes['editorial_focus']) : $authorAttributes['editorial_focus'];
         $prompt = <<<PROMPT
 Genera un párrafo para un blog de jardinería basado en esta descripción:
 {$description}
@@ -164,7 +165,7 @@ Genera un párrafo para un blog de jardinería basado en esta descripción:
 IMPORTANTE - Escribe con estas características del autor:
 - Tono: {$authorAttributes['tone']}
 - Personalidad: {$authorAttributes['personality']}
-- Foco Editorial: {$authorAttributes['editorial_focus']}
+- Foco Editorial: {$editorialFocus}
 - Estilo de escritura: {$authorAttributes['writing_style']}
 
 El párrafo debe ser:

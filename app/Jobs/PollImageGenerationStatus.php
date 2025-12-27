@@ -133,7 +133,27 @@ class PollImageGenerationStatus implements ShouldQueue
             $attribute = $this->imageGenerationRequest->metadata['attribute'] ?? null;
             $baseName = uniqid('', true);
 
-            $target = $this->imageGenerationRequest->targetable;
+            // Load target model - try multiple approaches for robustness
+            $target = null;
+            $request = $this->imageGenerationRequest;
+
+            // First, try the polymorphic relationship directly
+            if ($request->targetable_type && $request->targetable_id) {
+                $targetClass = $request->targetable_type;
+                if (class_exists($targetClass)) {
+                    $target = $targetClass::find($request->targetable_id);
+                }
+            }
+
+            // Fallback to morphTo relationship if direct load failed
+            if (! $target) {
+                $target = $request->targetable;
+            }
+
+            // Backward compatibility with legacy post_id column
+            if (! $target && $request->post_id) {
+                $target = \App\Models\Post::query()->find($request->post_id);
+            }
 
             if ($target instanceof \App\Models\Post) {
                 $directory = 'posts';
@@ -160,7 +180,40 @@ class PollImageGenerationStatus implements ShouldQueue
 
             // Update related model attribute when available
             if ($target && $attribute) {
-                $target->update([$attribute => $publicUrl]);
+                // Handle nested attributes for content blocks (e.g., "content.0.data.url")
+                if (str_contains($attribute, '.')) {
+                    $this->updateNestedAttribute($target, $attribute, $publicUrl);
+                } else {
+                    // For simple attributes, set directly and save
+                    $target->{$attribute} = $publicUrl;
+                    $saved = $target->save();
+
+                    Log::info('Simple attribute update via job', [
+                        'model' => get_class($target),
+                        'model_id' => $target->id,
+                        'attribute' => $attribute,
+                        'value' => $publicUrl,
+                        'saved' => $saved,
+                    ]);
+
+                    // Verify the update persisted
+                    $target->refresh();
+                    if ($target->{$attribute} !== $publicUrl) {
+                        Log::error('Attribute update failed to persist via job', [
+                            'model' => get_class($target),
+                            'model_id' => $target->id,
+                            'attribute' => $attribute,
+                            'expected' => $publicUrl,
+                            'actual' => $target->{$attribute},
+                        ]);
+                    }
+                }
+            } else {
+                Log::warning('Cannot update model attribute via job - missing target or attribute', [
+                    'has_target' => $target !== null,
+                    'attribute' => $attribute,
+                    'request_id' => $this->imageGenerationRequest->id,
+                ]);
             }
 
             $this->imageGenerationRequest->update([
@@ -182,6 +235,75 @@ class PollImageGenerationStatus implements ShouldQueue
             $this->imageGenerationRequest->update([
                 'status' => 'failed',
                 'error_message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Update a nested attribute in the model (e.g., "content.0.data.url").
+     */
+    private function updateNestedAttribute($model, string $path, $value): void
+    {
+        $parts = explode('.', $path);
+        $firstKey = array_shift($parts);
+
+        // Get the current value of the first key (fresh copy)
+        $model->refresh();
+        $data = $model->{$firstKey};
+
+        if (! is_array($data)) {
+            Log::warning('Nested attribute update failed via job: not an array', [
+                'model' => get_class($model),
+                'attribute' => $firstKey,
+                'path' => $path,
+            ]);
+
+            return;
+        }
+
+        // Navigate to the nested location and update the value
+        $current = &$data;
+        foreach ($parts as $i => $part) {
+            if ($i === count($parts) - 1) {
+                // Last part, set the value
+                $current[$part] = $value;
+            } else {
+                // Navigate deeper
+                if (! isset($current[$part])) {
+                    Log::warning('Nested attribute path not found via job', [
+                        'model' => get_class($model),
+                        'path' => $path,
+                        'part' => $part,
+                    ]);
+
+                    return;
+                }
+                $current = &$current[$part];
+            }
+        }
+
+        // Force Laravel to recognize the change by setting the attribute directly
+        $model->{$firstKey} = $data;
+        $saved = $model->save();
+
+        Log::info('Nested attribute updated via job', [
+            'model' => get_class($model),
+            'model_id' => $model->id,
+            'path' => $path,
+            'value' => $value,
+            'saved' => $saved,
+        ]);
+
+        // Verify the update persisted
+        $model->refresh();
+        $actualValue = data_get($model->{$firstKey}, implode('.', $parts));
+        if ($actualValue !== $value) {
+            Log::error('Nested attribute update failed to persist via job', [
+                'model' => get_class($model),
+                'model_id' => $model->id,
+                'path' => $path,
+                'expected' => $value,
+                'actual' => $actualValue,
             ]);
         }
     }

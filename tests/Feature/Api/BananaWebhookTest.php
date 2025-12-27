@@ -154,4 +154,147 @@ class BananaWebhookTest extends TestCase
         $this->assertEquals('completed', $req->status);
         $this->assertNotNull($req->image_url);
     }
+
+    public function test_webhook_updates_post_cover_image_via_targetable(): void
+    {
+        Storage::fake('s3');
+
+        Http::fake([
+            'example.com/*' => Http::response('PNGDATA', 200, ['Content-Type' => 'image/png']),
+        ]);
+
+        $post = Post::factory()->create(['cover_image' => null]);
+
+        // Create request with targetable_type/targetable_id (new format)
+        $req = ImageGenerationRequest::query()->create([
+            'external_id' => 'task-targetable-123',
+            'targetable_type' => Post::class,
+            'targetable_id' => $post->getKey(),
+            'token' => 'tok_targetable',
+            'prompt' => 'Cover image via targetable',
+            'size' => '1024x1024',
+            'status' => 'pending',
+            'metadata' => [
+                'attribute' => 'cover_image',
+                'model_name' => 'Post',
+            ],
+        ]);
+
+        $payload = [
+            'taskId' => 'task-targetable-123',
+            'imageUrl' => 'http://example.com/cover.png',
+        ];
+
+        $this->postJson('/api/webhooks/banana', $payload)
+            ->assertOk()
+            ->assertJsonStructure(['message', 'url']);
+
+        $post->refresh();
+        $this->assertNotNull($post->cover_image, 'Post cover_image should be updated');
+        $this->assertStringContainsString('posts/', $post->cover_image);
+
+        $req->refresh();
+        $this->assertEquals('completed', $req->status);
+    }
+
+    public function test_webhook_updates_nested_content_image(): void
+    {
+        Storage::fake('s3');
+
+        Http::fake([
+            'example.com/*' => Http::response('PNGDATA', 200, ['Content-Type' => 'image/png']),
+        ]);
+
+        // Create post with content blocks including an image block
+        $post = Post::factory()->create([
+            'content' => [
+                [
+                    'type' => 'heading',
+                    'data' => ['text' => 'Test Heading', 'level' => 2],
+                ],
+                [
+                    'type' => 'image',
+                    'data' => ['url' => null, 'alt' => 'Test image', 'caption' => 'Test caption'],
+                ],
+                [
+                    'type' => 'paragraph',
+                    'data' => ['text' => 'Some paragraph text'],
+                ],
+            ],
+        ]);
+
+        // Create request for the content image at index 1
+        $req = ImageGenerationRequest::query()->create([
+            'external_id' => 'task-content-img',
+            'targetable_type' => Post::class,
+            'targetable_id' => $post->getKey(),
+            'token' => 'tok_content',
+            'prompt' => 'Content block image',
+            'size' => '1024x1024',
+            'status' => 'pending',
+            'metadata' => [
+                'attribute' => 'content.1.data.url',
+                'model_name' => 'Post',
+                'block_index' => 1,
+            ],
+        ]);
+
+        $payload = [
+            'taskId' => 'task-content-img',
+            'imageUrl' => 'http://example.com/content-image.png',
+        ];
+
+        $this->postJson('/api/webhooks/banana', $payload)
+            ->assertOk()
+            ->assertJsonStructure(['message', 'url']);
+
+        $post->refresh();
+
+        // Verify the nested content block image URL was updated
+        $this->assertNotNull($post->content[1]['data']['url'], 'Content block image URL should be updated');
+        $this->assertStringContainsString('posts/', $post->content[1]['data']['url']);
+
+        // Other blocks should remain unchanged
+        $this->assertEquals('heading', $post->content[0]['type']);
+        $this->assertEquals('paragraph', $post->content[2]['type']);
+
+        $req->refresh();
+        $this->assertEquals('completed', $req->status);
+    }
+
+    public function test_webhook_handles_missing_target_gracefully(): void
+    {
+        Storage::fake('s3');
+
+        Http::fake([
+            'example.com/*' => Http::response('PNGDATA', 200, ['Content-Type' => 'image/png']),
+        ]);
+
+        // Create request without a valid target (post doesn't exist)
+        $req = ImageGenerationRequest::query()->create([
+            'external_id' => 'task-no-target',
+            'targetable_type' => Post::class,
+            'targetable_id' => '01NONEXISTENT000000000000',
+            'token' => 'tok_notarget',
+            'prompt' => 'Image for missing post',
+            'size' => '1024x1024',
+            'status' => 'pending',
+            'metadata' => [
+                'attribute' => 'cover_image',
+            ],
+        ]);
+
+        $payload = [
+            'taskId' => 'task-no-target',
+            'imageUrl' => 'http://example.com/orphan.png',
+        ];
+
+        // Should still complete successfully (image stored, but no model updated)
+        $this->postJson('/api/webhooks/banana', $payload)
+            ->assertOk();
+
+        $req->refresh();
+        $this->assertEquals('completed', $req->status);
+        $this->assertNotNull($req->image_url);
+    }
 }

@@ -76,15 +76,24 @@ class BananaCallbackController extends Controller
             $attribute = $requestRecord->metadata['attribute'] ?? null;
             $baseName = uniqid('', true);
 
+            // Load target model - try multiple approaches for robustness
             $target = null;
-            if ($requestRecord->relationLoaded('targetable')) {
-                $target = $requestRecord->targetable;
-            } else {
-                $target = $requestRecord->targetable; // triggers lazy load
+
+            // First, try the polymorphic relationship
+            if ($requestRecord->targetable_type && $requestRecord->targetable_id) {
+                $targetClass = $requestRecord->targetable_type;
+                if (class_exists($targetClass)) {
+                    $target = $targetClass::find($requestRecord->targetable_id);
+                }
             }
 
+            // Fallback to morphTo relationship if direct load failed
+            if (! $target) {
+                $target = $requestRecord->targetable;
+            }
+
+            // Backward compatibility with legacy post_id column
             if (! $target && $requestRecord->post_id) {
-                // Backward compatibility with legacy post_id column
                 $target = Post::query()->find($requestRecord->post_id);
             }
 
@@ -129,8 +138,37 @@ class BananaCallbackController extends Controller
                 if (str_contains($attribute, '.')) {
                     $this->updateNestedAttribute($target, $attribute, $publicUrl);
                 } else {
-                    $target->update([$attribute => $publicUrl]);
+                    // For simple attributes, update directly and verify
+                    $target->{$attribute} = $publicUrl;
+                    $saved = $target->save();
+
+                    Log::info('Simple attribute update', [
+                        'model' => get_class($target),
+                        'model_id' => $target->id,
+                        'attribute' => $attribute,
+                        'value' => $publicUrl,
+                        'saved' => $saved,
+                    ]);
+
+                    // Verify the update persisted
+                    $target->refresh();
+                    if ($target->{$attribute} !== $publicUrl) {
+                        Log::error('Attribute update failed to persist', [
+                            'model' => get_class($target),
+                            'model_id' => $target->id,
+                            'attribute' => $attribute,
+                            'expected' => $publicUrl,
+                            'actual' => $target->{$attribute},
+                        ]);
+                    }
                 }
+            } else {
+                Log::warning('Cannot update model attribute - missing target or attribute', [
+                    'has_target' => $target !== null,
+                    'target_class' => $target ? get_class($target) : null,
+                    'attribute' => $attribute,
+                    'request_id' => $requestRecord->id,
+                ]);
             }
 
             $requestRecord->update([
@@ -205,13 +243,27 @@ class BananaCallbackController extends Controller
 
         // Force Laravel to recognize the change by setting the attribute directly
         $model->{$firstKey} = $data;
-        $model->save();
+        $saved = $model->save();
 
-        Log::info('Nested attribute updated successfully', [
+        Log::info('Nested attribute updated', [
             'model' => get_class($model),
             'model_id' => $model->id,
             'path' => $path,
             'value' => $value,
+            'saved' => $saved,
         ]);
+
+        // Verify the update persisted
+        $model->refresh();
+        $actualValue = data_get($model->{$firstKey}, implode('.', $parts));
+        if ($actualValue !== $value) {
+            Log::error('Nested attribute update failed to persist', [
+                'model' => get_class($model),
+                'model_id' => $model->id,
+                'path' => $path,
+                'expected' => $value,
+                'actual' => $actualValue,
+            ]);
+        }
     }
 }

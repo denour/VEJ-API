@@ -104,7 +104,26 @@ class PollPendingImageGenerations extends Command
             $attribute = $request->metadata['attribute'] ?? null;
             $baseName = uniqid('', true);
 
-            $target = $request->targetable;
+            // Load target model - try multiple approaches for robustness
+            $target = null;
+
+            // First, try the polymorphic relationship directly
+            if ($request->targetable_type && $request->targetable_id) {
+                $targetClass = $request->targetable_type;
+                if (class_exists($targetClass)) {
+                    $target = $targetClass::find($request->targetable_id);
+                }
+            }
+
+            // Fallback to morphTo relationship if direct load failed
+            if (! $target) {
+                $target = $request->targetable;
+            }
+
+            // Backward compatibility with legacy post_id column
+            if (! $target && $request->post_id) {
+                $target = \App\Models\Post::query()->find($request->post_id);
+            }
 
             if ($target instanceof \App\Models\Post) {
                 $directory = 'posts';
@@ -135,8 +154,32 @@ class PollPendingImageGenerations extends Command
                 if (str_contains($attribute, '.')) {
                     $this->updateNestedAttribute($target, $attribute, $publicUrl);
                 } else {
-                    $target->update([$attribute => $publicUrl]);
+                    // For simple attributes, set directly and save
+                    $target->{$attribute} = $publicUrl;
+                    $saved = $target->save();
+
+                    $this->line("  Attribute update: saved={$saved}");
+
+                    // Verify the update persisted
+                    $target->refresh();
+                    if ($target->{$attribute} !== $publicUrl) {
+                        $this->error('  ✗ Attribute update failed to persist');
+                        Log::error('Attribute update failed to persist via polling', [
+                            'model' => get_class($target),
+                            'model_id' => $target->id,
+                            'attribute' => $attribute,
+                            'expected' => $publicUrl,
+                            'actual' => $target->{$attribute},
+                        ]);
+                    }
                 }
+            } else {
+                $this->warn('  ⚠ Cannot update model attribute - missing target or attribute');
+                Log::warning('Cannot update model attribute via polling - missing target or attribute', [
+                    'has_target' => $target !== null,
+                    'attribute' => $attribute,
+                    'request_id' => $request->id,
+                ]);
             }
 
             $request->update([
@@ -174,10 +217,18 @@ class PollPendingImageGenerations extends Command
         $parts = explode('.', $path);
         $firstKey = array_shift($parts);
 
-        // Get the current value of the first key
+        // Get the current value of the first key (fresh copy)
+        $model->refresh();
         $data = $model->{$firstKey};
 
         if (! is_array($data)) {
+            $this->warn("  ⚠ Nested attribute update failed: {$firstKey} is not an array");
+            Log::warning('Nested attribute update failed via polling: not an array', [
+                'model' => get_class($model),
+                'attribute' => $firstKey,
+                'path' => $path,
+            ]);
+
             return;
         }
 
@@ -190,13 +241,37 @@ class PollPendingImageGenerations extends Command
             } else {
                 // Navigate deeper
                 if (! isset($current[$part])) {
+                    $this->warn("  ⚠ Nested attribute path not found: {$part}");
+                    Log::warning('Nested attribute path not found via polling', [
+                        'model' => get_class($model),
+                        'path' => $path,
+                        'part' => $part,
+                    ]);
+
                     return;
                 }
                 $current = &$current[$part];
             }
         }
 
-        // Save the updated data back to the model
-        $model->update([$firstKey => $data]);
+        // Force Laravel to recognize the change by setting the attribute directly
+        $model->{$firstKey} = $data;
+        $saved = $model->save();
+
+        $this->line("  Nested attribute update: path={$path}, saved={$saved}");
+
+        // Verify the update persisted
+        $model->refresh();
+        $actualValue = data_get($model->{$firstKey}, implode('.', $parts));
+        if ($actualValue !== $value) {
+            $this->error('  ✗ Nested attribute update failed to persist');
+            Log::error('Nested attribute update failed to persist via polling', [
+                'model' => get_class($model),
+                'model_id' => $model->id,
+                'path' => $path,
+                'expected' => $value,
+                'actual' => $actualValue,
+            ]);
+        }
     }
 }

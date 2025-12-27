@@ -55,28 +55,31 @@ class EditPost extends EditRecord
                             'length' => $data['length'] ?? 'medium',
                         ];
 
-                        $generatedPost = $service->generatePost(
+                        // Generate post data without creating a temporary post
+                        $generatedData = $service->generatePostData(
                             $post->author,
                             $data['topic'] ?? null,
                             $options
                         );
 
+                        // Update the existing post with the generated content
                         $post->update([
-                            'title' => $generatedPost->title,
-                            'slug' => $generatedPost->slug,
-                            'excerpt' => $generatedPost->excerpt,
-                            'content' => $generatedPost->content,
-                            'list' => $generatedPost->list,
-                            'category' => $generatedPost->category,
-                            'tags' => $generatedPost->tags,
-                            'reading_time' => $generatedPost->reading_time,
+                            'title' => $generatedData['title'],
+                            'slug' => \Illuminate\Support\Str::slug($generatedData['title']),
+                            'excerpt' => $generatedData['excerpt'],
+                            'content' => $generatedData['content'],
+                            'list' => $generatedData['list'],
+                            'category' => $generatedData['category'],
+                            'tags' => $generatedData['tags'],
+                            'reading_time' => $generatedData['reading_time'],
                         ]);
 
-                        $generatedPost->delete();
+                        // Generate images for the original post (not a temporary one)
+                        $service->generateImagesForPost($post, $generatedData['structure']);
 
                         Notification::make()
                             ->title('Contenido generado')
-                            ->body('El contenido del post se generó exitosamente.')
+                            ->body('El contenido del post se generó exitosamente. Las imágenes se están generando en segundo plano.')
                             ->success()
                             ->send();
 

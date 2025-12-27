@@ -28,11 +28,24 @@ class GenerateModelImage implements ShouldQueue
      */
     public function handle(ImageGeneratorInterface $generator): void
     {
+        // Skip if there's already a pending request for this attribute
+        if (ImageGenerationRequest::hasPendingRequest(
+            get_class($this->model),
+            $this->model->getKey(),
+            $this->attribute
+        )) {
+            Log::info('Skipping image generation - pending request exists', [
+                'model' => get_class($this->model),
+                'id' => $this->model->getKey(),
+                'attribute' => $this->attribute,
+            ]);
+
+            return;
+        }
+
         try {
-            // Generate prompt if not provided
             $finalPrompt = $this->prompt ?? $this->generatePrompt();
 
-            // Generate image using Banana API
             $response = $generator->generate($finalPrompt, [
                 'callBackUrl' => url('api/webhooks/banana'),
                 'aspectRatio' => '16:9',
@@ -40,8 +53,6 @@ class GenerateModelImage implements ShouldQueue
                 'imageUrls' => [''],
             ]);
 
-            // The response should be a task ID since we're using async generation
-            // Create a record to track this request
             ImageGenerationRequest::query()->create([
                 'external_id' => $response,
                 'targetable_type' => get_class($this->model),

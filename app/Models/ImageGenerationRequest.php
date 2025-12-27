@@ -61,4 +61,17 @@ class ImageGenerationRequest extends Model
     {
         return $this->morphTo();
     }
+
+    /**
+     * Check if a pending or processing request already exists for the given target and attribute.
+     */
+    public static function hasPendingRequest(string $targetableType, string $targetableId, string $attribute): bool
+    {
+        return static::query()
+            ->where('targetable_type', $targetableType)
+            ->where('targetable_id', $targetableId)
+            ->whereIn('status', ['pending', 'processing'])
+            ->whereJsonContains('metadata->attribute', $attribute)
+            ->exists();
+    }
 }

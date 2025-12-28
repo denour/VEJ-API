@@ -53,10 +53,9 @@ return [
             'api_key' => env('OPENAI_API_KEY'),
             'model' => env('OPENAI_IMAGE_MODEL', 'dall-e-3'),
         ],
-        // Add more image providers here
-        // 'stability' => [
-        //     'api_key' => env('STABILITY_API_KEY'),
-        //     'model' => env('STABILITY_MODEL', 'stable-diffusion-xl'),
-        // ],
+        'mock' => [
+            'task_id' => env('MOCK_BANANA_TASK_ID', '6cf7ba74ee3e25a08b161392444af4222345'),
+            'image_url' => env('MOCK_BANANA_IMAGE_URL', '["https://tempfile.aiquickdraw.com/h/6cf7ba74ee3e25a08b161392444af422_1766822849.png"]'),
+        ],
     ],
 ];

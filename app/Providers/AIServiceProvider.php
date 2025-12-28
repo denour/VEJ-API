@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Contracts\AI\ImageGeneratorInterface;
 use App\Contracts\AI\TextGeneratorInterface;
 use App\Services\AI\BananaImageGenerator;
+use App\Services\AI\MockBananaImageGenerator;
 use App\Services\AI\OpenAIImageGenerator;
 use App\Services\AI\OpenAITextGenerator;
 use Illuminate\Support\ServiceProvider;
@@ -40,6 +41,10 @@ class AIServiceProvider extends ServiceProvider
                 'openai' => new OpenAIImageGenerator(
                     apiKey: $config['api_key'],
                     model: $config['model'],
+                ),
+                'mock' => new MockBananaImageGenerator(
+                    mockTaskId: $config['task_id'],
+                    mockImageUrl: $config['image_url'],
                 ),
                 default => throw new \InvalidArgumentException("Unknown image provider: {$provider}"),
             };

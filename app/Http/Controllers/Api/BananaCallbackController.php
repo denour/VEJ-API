@@ -24,6 +24,7 @@ class BananaCallbackController extends Controller
 
         $imageUrl = data_get($payload, 'imageUrl')
             ?? data_get($payload, 'resultImageUrl')
+            ?? data_get($payload, 'data.info.resultImageUrl')
             ?? data_get($payload, 'data.response.resultImageUrl');
 
         if (empty($taskId)) {

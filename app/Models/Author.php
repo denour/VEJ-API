@@ -29,7 +29,7 @@ class Author extends Model
     protected function image(): Attribute
     {
         return Attribute::make(
-            get: fn (?string $value) => $value ? Storage::disk('s3')->url($value) : null,
+            get: fn (?string $value) => $value ?: null,
             set: fn (?string $value) => $value,
         );
     }

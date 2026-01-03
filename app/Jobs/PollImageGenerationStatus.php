@@ -2,8 +2,8 @@
 
 namespace App\Jobs;
 
+use App\Contracts\AI\ImageGeneratorInterface;
 use App\Models\ImageGenerationRequest;
-use App\Services\AI\BananaImageGenerator;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Http;
@@ -28,7 +28,7 @@ class PollImageGenerationStatus implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(BananaImageGenerator $generator): void
+    public function handle(ImageGeneratorInterface $generator): void
     {
         // Skip if already completed or failed
         if (in_array($this->imageGenerationRequest->status, ['completed', 'failed'])) {

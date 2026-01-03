@@ -4,6 +4,7 @@ namespace App\Services\AI;
 
 use App\Contracts\AI\ImageGeneratorInterface;
 use App\Contracts\AI\TextGeneratorInterface;
+use App\Jobs\PollImageGenerationStatus;
 use App\Models\Author;
 use App\Models\ImageGenerationRequest;
 use App\Models\Post;
@@ -24,19 +25,23 @@ class PostGeneratorService
     {
         $data = $this->generatePostData($author, $topic, $options);
 
-        $post = Post::create([
-            'title' => $data['title'],
-            'slug' => Str::slug($data['title']),
-            'excerpt' => $data['excerpt'],
-            'content' => $data['content'],
-            'list' => $data['list'],
-            'category' => $data['category'],
-            'tags' => $data['tags'],
-            'author_id' => $author->id,
-            'status' => 'draft',
-            'featured' => false,
-            'reading_time' => $data['reading_time'],
-        ]);
+        $slug = Str::slug($data['title']);
+
+        $post = Post::updateOrCreate(
+            ['slug' => $slug],
+            [
+                'title' => $data['title'],
+                'excerpt' => $data['excerpt'],
+                'content' => $data['content'],
+                'list' => $data['list'],
+                'category' => $data['category'],
+                'tags' => $data['tags'],
+                'author_id' => $author->id,
+                'status' => 'draft',
+                'featured' => false,
+                'reading_time' => $data['reading_time'],
+            ]
+        );
 
         $this->generateImagesForPost($post, $data['structure']);
 
@@ -112,7 +117,7 @@ class PostGeneratorService
                         'callBackUrl' => url('api/webhooks/banana'),
                     ]);
 
-                    ImageGenerationRequest::query()->create([
+                    $request = ImageGenerationRequest::query()->create([
                         'external_id' => $taskId,
                         'post_id' => $post->id,
                         'targetable_type' => Post::class,
@@ -125,6 +130,9 @@ class PostGeneratorService
                             'block_index' => $index,
                         ],
                     ]);
+
+                    // Dispatch polling job as fallback (60 seconds delay)
+                    PollImageGenerationStatus::dispatch($request)->delay(now()->addSeconds(60));
                 } catch (\Throwable $e) {
                     \Illuminate\Support\Facades\Log::error('Failed to generate content image', [
                         'post_id' => $post->id,
@@ -439,7 +447,7 @@ PROMPT;
                         'callBackUrl' => url('api/webhooks/banana'),
                     ]);
 
-                    ImageGenerationRequest::query()->create([
+                    $request = ImageGenerationRequest::query()->create([
                         'external_id' => $taskId,
                         'post_id' => $post->id,
                         'targetable_type' => Post::class,
@@ -452,6 +460,9 @@ PROMPT;
                             'block_index' => $index,
                         ],
                     ]);
+
+                    // Dispatch polling job as fallback (60 seconds delay)
+                    PollImageGenerationStatus::dispatch($request)->delay(now()->addSeconds(60));
                 } catch (\Throwable $e) {
                     \Illuminate\Support\Facades\Log::error('Failed to generate content image', [
                         'post_id' => $post->id,
@@ -497,7 +508,7 @@ PROMPT;
                 'callBackUrl' => url('api/webhooks/banana'),
             ]);
 
-            ImageGenerationRequest::query()->create([
+            $request = ImageGenerationRequest::query()->create([
                 'external_id' => $taskId,
                 'post_id' => $post->id,
                 'targetable_type' => Post::class,
@@ -509,6 +520,9 @@ PROMPT;
                     'model_name' => 'Post',
                 ],
             ]);
+
+            // Dispatch polling job as fallback (60 seconds delay)
+            PollImageGenerationStatus::dispatch($request)->delay(now()->addSeconds(60));
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error('Failed to generate post cover image', [
                 'post_id' => $post->id,

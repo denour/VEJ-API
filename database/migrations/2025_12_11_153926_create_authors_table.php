@@ -12,10 +12,38 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('authors', function (Blueprint $table): void {
-            $table->id();
-            $table->string('image')->nullable();
+            $table->ulid('id')->primary();
+
+            // Basic Information
             $table->string('name');
-            $table->text('description')->nullable();
+            $table->string('slug')->unique();
+            $table->boolean('is_active')->default(true);
+            $table->string('avatar_url')->nullable();
+
+            // Background & Identity
+            $table->text('background_story')->nullable();
+            $table->json('personality_traits')->nullable();
+            $table->json('expertise_areas')->nullable();
+
+            // Voice Configuration
+            $table->string('sentence_style')->default('varied');
+            $table->string('vocabulary_level')->default('conversational');
+            $table->string('tone')->default('warm');
+            $table->string('formality')->default('balanced');
+
+            // Signature Elements
+            $table->json('catchphrases')->nullable();
+            $table->json('quirks')->nullable();
+            $table->json('recurring_topics')->nullable();
+            $table->json('avoided_elements')->nullable();
+
+            // Generated Content
+            $table->text('voice_bible')->nullable();
+            $table->text('sample_paragraph')->nullable();
+
+            // Stats
+            $table->json('generation_stats')->nullable();
+
             $table->timestamps();
         });
     }

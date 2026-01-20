@@ -52,20 +52,21 @@ class PostController extends Controller
 
         $query->latest('published_at')
             ->where('status', 'published')
-            ->latest('created_at')->with('author');
+            ->latest('created_at')
+            ->with(['author', 'blocks']);
 
         return PostResource::collection($query->paginate($perPage));
     }
 
     public function show(Post $post): PostResource
     {
-        $post->load('author');
+        $post->load(['author', 'blocks']);
 
         $related = Post::query()
             ->whereKeyNot($post->getKey())
             ->where('status', 'published')
             ->latest('created_at')
-            ->with('author')
+            ->with(['author', 'blocks'])
             ->limit(3)
             ->get();
 

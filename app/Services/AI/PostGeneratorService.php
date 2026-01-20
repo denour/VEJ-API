@@ -8,6 +8,8 @@ use App\Jobs\PollImageGenerationStatus;
 use App\Models\Author;
 use App\Models\ImageGenerationRequest;
 use App\Models\Post;
+use App\Models\PostBlock;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class PostGeneratorService
@@ -16,6 +18,7 @@ class PostGeneratorService
         private readonly TextGeneratorInterface $textGenerator,
         private readonly ImageGeneratorInterface $imageGenerator,
         private readonly AuthorDescriptionGeneratorService $authorDescriptionService,
+        private readonly PersonaPromptBuilder $personaPromptBuilder,
     ) {}
 
     /**
@@ -27,25 +30,113 @@ class PostGeneratorService
 
         $slug = Str::slug($data['title']);
 
-        $post = Post::updateOrCreate(
-            ['slug' => $slug],
-            [
-                'title' => $data['title'],
-                'excerpt' => $data['excerpt'],
-                'content' => $data['content'],
-                'list' => $data['list'],
-                'category' => $data['category'],
-                'tags' => $data['tags'],
-                'author_id' => $author->id,
-                'status' => 'draft',
-                'featured' => false,
-                'reading_time' => $data['reading_time'],
-            ]
-        );
+        return DB::transaction(function () use ($slug, $data, $author) {
+            $post = Post::updateOrCreate(
+                ['slug' => $slug],
+                [
+                    'title' => $data['title'],
+                    'excerpt' => $data['excerpt'],
+                    'content' => $data['content'], // Keep for backward compatibility
+                    'list' => [], // Will be auto-generated from heading blocks
+                    'category' => $data['category'],
+                    'tags' => $data['tags'],
+                    'author_id' => $author->id,
+                    'status' => 'draft',
+                    'featured' => false,
+                    'reading_time' => $data['reading_time'],
+                ]
+            );
 
-        $this->generateImagesForPost($post, $data['structure']);
+            // Delete existing blocks and create new ones
+            $post->blocks()->delete();
 
-        return $post;
+            // Create PostBlock records from content
+            $order = 0;
+            foreach ($data['content'] as $blockData) {
+                $this->createPostBlock($post, $blockData, $order);
+                $order++;
+            }
+
+            // Auto-generate table of contents from heading blocks
+            $toc = $post->generateTableOfContents();
+            $post->update(['list' => $toc]);
+
+            // Generate images for the post (cover + block images)
+            $this->generateImagesForPost($post, $data['structure']);
+
+            return $post;
+        });
+    }
+
+    /**
+     * Generate a post using an Author instead of Author.
+     */
+    public function generatePostWithPersona(Author $persona, ?string $topic = null, array $options = []): Post
+    {
+        $data = $this->generatePostDataWithPersona($persona, $topic, $options);
+
+        $slug = Str::slug($data['title']);
+
+        return DB::transaction(function () use ($slug, $data) {
+            $post = Post::updateOrCreate(
+                ['slug' => $slug],
+                [
+                    'title' => $data['title'],
+                    'excerpt' => $data['excerpt'],
+                    'content' => $data['content'],
+                    'list' => [],
+                    'category' => $data['category'],
+                    'tags' => $data['tags'],
+                    'author_id' => $author->id,
+                    'status' => 'draft',
+                    'featured' => false,
+                    'reading_time' => $data['reading_time'],
+                ]
+            );
+
+            // Delete existing blocks and create new ones
+            $post->blocks()->delete();
+
+            // Create PostBlock records from content
+            $order = 0;
+            foreach ($data['content'] as $blockData) {
+                $this->createPostBlock($post, $blockData, $order);
+                $order++;
+            }
+
+            // Auto-generate table of contents
+            $toc = $post->generateTableOfContents();
+            $post->update(['list' => $toc]);
+
+            // Track usage
+            $author->incrementPostCount();
+
+            // Generate images
+            $this->generateImagesForPost($post, $data['structure']);
+
+            return $post;
+        });
+    }
+
+    /**
+     * Generate post data with persona.
+     */
+    public function generatePostDataWithPersona(Author $persona, ?string $topic = null, array $options = []): array
+    {
+        $structure = $this->generatePostStructureWithPersona($persona, $topic, $options);
+        $contentBlocks = $this->generateContentBlocksWithPersona($structure['blocks'], $persona);
+        $tableOfContents = $this->generateTableOfContents($contentBlocks);
+
+        return [
+            'title' => $structure['title'],
+            'excerpt' => $structure['excerpt'],
+            'content' => $contentBlocks,
+            'list' => $tableOfContents,
+            'category' => $structure['category'],
+            'tags' => $structure['tags'],
+            'reading_time' => $this->estimateReadingTime($contentBlocks),
+            'structure' => $structure,
+        ];
     }
 
     /**
@@ -93,20 +184,21 @@ class PostGeneratorService
     }
 
     /**
-     * Generate images for content blocks that already exist in the post.
+     * Generate images for PostBlock records that need images.
      */
     private function generateContentImagesFromContent(Post $post): void
     {
-        foreach ($post->content as $index => $block) {
-            if (($block['type'] ?? null) === 'image' && empty($block['data']['url'] ?? null)) {
-                $attribute = "content.{$index}.data.url";
+        // Use PostBlocks instead of JSON content
+        $imageBlocks = $post->blocks()->where('type', 'image')->get();
 
-                // Skip if there's already a pending request for this attribute
-                if (ImageGenerationRequest::hasPendingRequest(Post::class, $post->id, $attribute)) {
+        foreach ($imageBlocks as $block) {
+            if ($block->hasPendingImage()) {
+                // Skip if there's already a pending request for this block
+                if (ImageGenerationRequest::hasPendingRequest(PostBlock::class, $block->id, 'data.url')) {
                     continue;
                 }
 
-                $description = $block['data']['alt'] ?? $block['data']['caption'] ?? 'Beautiful garden plant';
+                $description = $block->data['alt'] ?? $block->data['caption'] ?? 'Beautiful garden plant';
                 $imagePrompt = $this->generateImagePrompt($description);
 
                 try {
@@ -120,14 +212,14 @@ class PostGeneratorService
                     $request = ImageGenerationRequest::query()->create([
                         'external_id' => $taskId,
                         'post_id' => $post->id,
-                        'targetable_type' => Post::class,
-                        'targetable_id' => $post->id,
+                        'targetable_type' => PostBlock::class,
+                        'targetable_id' => $block->id,
                         'prompt' => $imagePrompt,
                         'status' => 'pending',
                         'metadata' => [
-                            'attribute' => $attribute,
-                            'model_name' => 'Post',
-                            'block_index' => $index,
+                            'attribute' => 'data.url',
+                            'model_name' => 'PostBlock',
+                            'block_id' => $block->id,
                         ],
                     ]);
 
@@ -136,7 +228,7 @@ class PostGeneratorService
                 } catch (\Throwable $e) {
                     \Illuminate\Support\Facades\Log::error('Failed to generate content image', [
                         'post_id' => $post->id,
-                        'block_index' => $index,
+                        'block_id' => $block->id,
                         'error' => $e->getMessage(),
                     ]);
                 }
@@ -424,16 +516,99 @@ PROMPT;
     }
 
     /**
+     * Create a PostBlock record from block data.
+     */
+    private function createPostBlock(Post $post, array $blockData, int $order): PostBlock
+    {
+        $type = $blockData['type'];
+        $data = $blockData['data'] ?? [];
+
+        $block = new PostBlock([
+            'type' => $type,
+            'order' => $order,
+        ]);
+
+        switch ($type) {
+            case 'paragraph':
+                $block->content = $data['text'] ?? null;
+                break;
+
+            case 'heading':
+                $block->title = $data['text'] ?? null;
+                $block->data = ['level' => $data['level'] ?? 2];
+                break;
+
+            case 'image':
+                $block->data = [
+                    'url' => $data['url'] ?? null,
+                    'alt' => $data['alt'] ?? null,
+                    'caption' => $data['caption'] ?? null,
+                    'prompt' => $data['prompt'] ?? null,
+                ];
+                break;
+
+            case 'list':
+                $block->title = $data['title'] ?? null;
+                $block->data = [
+                    'items' => $data['items'] ?? [],
+                    'ordered' => $data['ordered'] ?? false,
+                ];
+                break;
+
+            case 'quote':
+                $block->content = $data['text'] ?? null;
+                $block->data = [
+                    'author' => $data['author'] ?? null,
+                    'source' => $data['source'] ?? null,
+                ];
+                break;
+
+            case 'code':
+                $block->title = $data['title'] ?? null;
+                $block->content = $data['code'] ?? null;
+                $block->data = [
+                    'language' => $data['language'] ?? 'text',
+                    'filename' => $data['filename'] ?? null,
+                ];
+                break;
+
+            case 'video':
+                $block->title = $data['title'] ?? null;
+                $block->data = [
+                    'url' => $data['url'] ?? null,
+                    'provider' => $data['provider'] ?? 'youtube',
+                    'thumbnail' => $data['thumbnail'] ?? null,
+                    'caption' => $data['caption'] ?? null,
+                ];
+                break;
+        }
+
+        $post->blocks()->save($block);
+
+        return $block;
+    }
+
+    /**
      * Generate images for content blocks that have type 'image'.
      */
     private function generateContentImages(Post $post, array $blocks): void
     {
         foreach ($blocks as $index => $block) {
             if ($block['type'] === 'image') {
-                $attribute = "content.{$index}.data.url";
+                // Find the corresponding PostBlock record
+                $postBlock = $post->blocks()->where('type', 'image')->where('order', $index)->first();
 
-                // Skip if there's already a pending request for this attribute
-                if (ImageGenerationRequest::hasPendingRequest(Post::class, $post->id, $attribute)) {
+                if (! $postBlock) {
+                    \Illuminate\Support\Facades\Log::warning('PostBlock not found for image generation', [
+                        'post_id' => $post->id,
+                        'block_index' => $index,
+                    ]);
+
+                    continue;
+                }
+
+                // Skip if there's already a pending request for this block
+                if (ImageGenerationRequest::hasPendingRequest(PostBlock::class, $postBlock->id, 'data.url')) {
                     continue;
                 }
 
@@ -450,14 +625,14 @@ PROMPT;
                     $request = ImageGenerationRequest::query()->create([
                         'external_id' => $taskId,
                         'post_id' => $post->id,
-                        'targetable_type' => Post::class,
-                        'targetable_id' => $post->id,
+                        'targetable_type' => PostBlock::class,
+                        'targetable_id' => $postBlock->id,
                         'prompt' => $imagePrompt,
                         'status' => 'pending',
                         'metadata' => [
-                            'attribute' => $attribute,
-                            'model_name' => 'Post',
-                            'block_index' => $index,
+                            'attribute' => 'data.url',
+                            'model_name' => 'PostBlock',
+                            'block_id' => $postBlock->id,
                         ],
                     ]);
 
@@ -466,7 +641,7 @@ PROMPT;
                 } catch (\Throwable $e) {
                     \Illuminate\Support\Facades\Log::error('Failed to generate content image', [
                         'post_id' => $post->id,
-                        'block_index' => $index,
+                        'block_id' => $postBlock->id,
                         'error' => $e->getMessage(),
                     ]);
                 }
@@ -571,5 +746,152 @@ PROMPT;
 
         // Average reading speed: 200 words per minute
         return max(1, (int) ceil($wordCount / 200));
+    }
+
+    /**
+     * Generate post structure with persona.
+     */
+    private function generatePostStructureWithPersona(Author $persona, ?string $topic, array $options): array
+    {
+        $topicInstruction = $topic ? "The post topic should be: {$topic}" : 'Choose a relevant topic';
+
+        $lengthInstruction = match ($options['length'] ?? 'medium') {
+            'short' => 'The post should be short (4-5 blocks)',
+            'long' => 'The post should be long (8-10 blocks)',
+            default => 'The post should be medium length (5-8 blocks)',
+        };
+
+        $systemPrompt = $this->personaPromptBuilder->buildSystemPrompt($persona);
+        $userPrompt = <<<PROMPT
+{$topicInstruction}
+{$lengthInstruction}
+
+Create a structure for a gardening blog post. Return a JSON with this exact structure:
+{
+  "title": "Post title",
+  "excerpt": "Brief summary (2-3 sentences)",
+  "category": "gardening category",
+  "tags": ["tag1", "tag2", "tag3"],
+  "blocks": [
+    {"type": "paragraph", "description": "Introduction - what this block will cover"},
+    {"type": "heading", "description": "Section title"},
+    {"type": "paragraph", "description": "Content description"},
+    {"type": "list", "description": "List of items", "ordered": false},
+    {"type": "image", "description": "What the image should show"},
+    {"type": "quote", "description": "Inspirational quote"}
+  ]
+}
+
+Stay in character. Write titles and descriptions that match your voice.
+PROMPT;
+
+        $response = $this->textGenerator->generate($userPrompt, [
+            'system' => $systemPrompt,
+            'max_tokens' => 1000,
+        ]);
+
+        return $this->parseStructureResponse($response);
+    }
+
+    /**
+     * Generate content blocks with persona.
+     */
+    private function generateContentBlocksWithPersona(array $blocks, Author $persona): array
+    {
+        $content = [];
+        $systemPrompt = $this->personaPromptBuilder->buildSystemPrompt($persona);
+
+        foreach ($blocks as $block) {
+            $blockType = $block['type'];
+            $description = $block['description'];
+
+            $blockContent = match ($blockType) {
+                'paragraph' => $this->generateParagraphWithPersona($description, $persona, $systemPrompt),
+                'heading' => $this->generateHeadingWithPersona($description, $persona, $systemPrompt),
+                'list' => $this->generateListWithPersona($description, $block['ordered'] ?? false, $persona, $systemPrompt),
+                'quote' => $this->generateQuoteWithPersona($description, $persona, $systemPrompt),
+                'image' => $this->generateImageBlock($description),
+                'code' => $this->generateCodeBlock($description),
+                'video' => $this->generateVideoBlock($description),
+                default => null,
+            };
+
+            if ($blockContent) {
+                $content[] = $blockContent;
+            }
+        }
+
+        return $content;
+    }
+
+    private function generateParagraphWithPersona(string $description, Author $persona, string $systemPrompt): array
+    {
+        $userPrompt = $this->personaPromptBuilder->buildParagraphPrompt($persona, $description);
+
+        $text = $this->textGenerator->generate($userPrompt, [
+            'system' => $systemPrompt,
+            'max_tokens' => 400,
+        ]);
+
+        return [
+            'type' => 'paragraph',
+            'data' => ['text' => trim($text)],
+        ];
+    }
+
+    private function generateHeadingWithPersona(string $description, Author $persona, string $systemPrompt): array
+    {
+        $userPrompt = $this->personaPromptBuilder->buildHeadingPrompt($persona, $description);
+
+        $text = $this->textGenerator->generate($userPrompt, [
+            'system' => $systemPrompt,
+            'max_tokens' => 50,
+        ]);
+
+        return [
+            'type' => 'heading',
+            'data' => [
+                'text' => trim($text),
+                'level' => 2,
+            ],
+        ];
+    }
+
+    private function generateListWithPersona(string $description, bool $ordered, Author $persona, string $systemPrompt): array
+    {
+        $userPrompt = $this->personaPromptBuilder->buildListPrompt($persona, $description, $ordered);
+
+        $response = $this->textGenerator->generate($userPrompt, [
+            'system' => $systemPrompt,
+            'max_tokens' => 400,
+        ]);
+
+        $items = $this->parseListResponse($response);
+
+        return [
+            'type' => 'list',
+            'data' => [
+                'style' => $ordered ? 'ordered' : 'unordered',
+                'items' => $items,
+            ],
+        ];
+    }
+
+    private function generateQuoteWithPersona(string $description, Author $persona, string $systemPrompt): array
+    {
+        $userPrompt = $this->personaPromptBuilder->buildQuotePrompt($persona, $description);
+
+        $text = $this->textGenerator->generate($userPrompt, [
+            'system' => $systemPrompt,
+            'max_tokens' => 150,
+        ]);
+
+        return [
+            'type' => 'quote',
+            'data' => [
+                'text' => trim($text),
+                'caption' => $author->name,
+            ],
+        ];
     }
 }

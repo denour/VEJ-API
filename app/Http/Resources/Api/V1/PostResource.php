@@ -19,7 +19,13 @@ class PostResource extends JsonResource
             'title' => $this->title,
             'slug' => $this->slug,
             'excerpt' => $this->excerpt,
-            'content' => $this->content,
+
+            // NEW: PostBlock-based content (preferred)
+            'blocks' => PostBlockResource::collection($this->whenLoaded('blocks')),
+
+            // LEGACY: Keep backward compatibility with old content format
+            'content' => $this->getContentForApi(),
+
             'coverImage' => $this->cover_image ?? null,
             'category' => $this->category,
             'tags' => $this->tags ?? [],
@@ -33,5 +39,21 @@ class PostResource extends JsonResource
             'featured' => (bool) $this->featured,
             'status' => $this->status,
         ];
+    }
+
+    /**
+     * Get content in appropriate format for API.
+     * If blocks are loaded, generate legacy format from blocks.
+     * Otherwise, use the stored content field.
+     */
+    private function getContentForApi(): array
+    {
+        // If blocks relationship is loaded, generate content from blocks
+        if ($this->relationLoaded('blocks') && $this->blocks->isNotEmpty()) {
+            return $this->getContentFromBlocks();
+        }
+
+        // Fallback to legacy content field
+        return $this->content ?? [];
     }
 }

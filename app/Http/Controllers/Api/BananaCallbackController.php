@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ImageGenerationRequest;
 use App\Models\Post;
+use App\Models\PostBlock;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -109,14 +110,18 @@ class BananaCallbackController extends Controller
                 'attribute' => $attribute,
             ]);
 
-            if ($target instanceof \App\Models\Post) {
+            if ($target instanceof \App\Models\PostBlock) {
+                $directory = 'posts/blocks';
+                $attribute = 'data.url';
+                $baseName = 'block-'.$target->id;
+            } elseif ($target instanceof \App\Models\Post) {
                 $directory = 'posts';
                 // Use attribute from metadata if available, otherwise default to cover_image
                 $attribute = $attribute ?? 'cover_image';
                 $baseName = \Illuminate\Support\Str::slug($target->title ?? 'post').'-'.$target->id;
             } elseif ($target instanceof \App\Models\Author) {
                 $directory = 'authors';
-                $attribute = $attribute ?? 'image';
+                $attribute = $attribute ?? 'avatar_url';
                 $baseName = \Illuminate\Support\Str::slug($target->name ?? 'author').'-'.$target->id;
             } elseif ($target instanceof \App\Models\Product) {
                 $directory = 'products';
@@ -199,10 +204,31 @@ class BananaCallbackController extends Controller
     }
 
     /**
-     * Update a nested attribute in the model (e.g., "content.0.data.url").
+     * Update a nested attribute in the model (e.g., "data.url" for PostBlock or "content.0.data.url" for legacy Post).
      */
     private function updateNestedAttribute($model, string $path, $value): void
     {
+        // Special handling for PostBlock - much simpler!
+        if ($model instanceof PostBlock) {
+            $parts = explode('.', $path);
+            if (count($parts) === 2 && $parts[0] === 'data') {
+                $data = $model->data ?? [];
+                $data[$parts[1]] = $value;
+                $model->data = $data;
+                $saved = $model->save();
+
+                Log::info('PostBlock data updated', [
+                    'block_id' => $model->id,
+                    'key' => $parts[1],
+                    'value' => $value,
+                    'saved' => $saved,
+                ]);
+
+                return;
+            }
+        }
+
+        // Legacy nested attribute handling for other models
         $parts = explode('.', $path);
         $firstKey = array_shift($parts);
 

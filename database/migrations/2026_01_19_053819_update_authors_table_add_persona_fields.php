@@ -20,7 +20,7 @@ return new class extends Migration
 
             // Add slug if it doesn't exist
             if (! Schema::hasColumn('authors', 'slug')) {
-                $table->string('slug')->unique()->after('name');
+                $table->string('slug')->nullable()->after('name');
             }
 
             // Add is_active if it doesn't exist
@@ -112,6 +112,16 @@ return new class extends Migration
                 ->where('id', $author->id)
                 ->update(['slug' => \Illuminate\Support\Str::slug($author->name)]);
         });
+
+        // Make slug unique and not null after populating it
+        // Try to add unique constraint - if it already exists, the exception will be caught
+        try {
+            Schema::table('authors', function (Blueprint $table) {
+                $table->string('slug')->unique()->nullable(false)->change();
+            });
+        } catch (\Exception $e) {
+            // Index already exists, which is fine
+        }
     }
 
     /**

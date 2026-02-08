@@ -7,6 +7,7 @@ use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Cache;
 
 class ProductController extends Controller
 {
@@ -17,44 +18,54 @@ class ProductController extends Controller
             $perPage = 12;
         }
 
-        $query = Product::query();
+        $cacheKey = 'products:index:' . md5(json_encode($request->all()) . $perPage . $request->get('page', 1));
 
-        if ($search = $request->string('search')->toString()) {
-            $query->where(function ($q) use ($search): void {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('scientific_name', 'like', "%{$search}%");
-            });
-        }
+        $products = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($request, $perPage) {
+            $query = Product::query();
 
-        foreach (['type', 'care_level', 'sunlight', 'watering', 'condition', 'size'] as $field) {
-            if ($value = $request->string($field)->toString()) {
-                $query->where($field, $value);
+            if ($search = $request->string('search')->toString()) {
+                $query->where(function ($q) use ($search): void {
+                    $q->where('name', 'like', "%{$search}%")
+                        ->orWhere('scientific_name', 'like', "%{$search}%");
+                });
             }
-        }
 
-        if ($request->filled('in_stock')) {
-            $query->where('in_stock', filter_var($request->query('in_stock'), FILTER_VALIDATE_BOOLEAN));
-        }
+            foreach (['type', 'care_level', 'sunlight', 'watering', 'condition', 'size'] as $field) {
+                if ($value = $request->string($field)->toString()) {
+                    $query->where($field, $value);
+                }
+            }
 
-        if ($request->filled('is_rare')) {
-            $query->where('is_rare', filter_var($request->query('is_rare'), FILTER_VALIDATE_BOOLEAN));
-        }
+            if ($request->filled('in_stock')) {
+                $query->where('in_stock', filter_var($request->query('in_stock'), FILTER_VALIDATE_BOOLEAN));
+            }
 
-        if ($request->filled('min_price')) {
-            $query->where('price', '>=', (float) $request->query('min_price'));
-        }
+            if ($request->filled('is_rare')) {
+                $query->where('is_rare', filter_var($request->query('is_rare'), FILTER_VALIDATE_BOOLEAN));
+            }
 
-        if ($request->filled('max_price')) {
-            $query->where('price', '<=', (float) $request->query('max_price'));
-        }
+            if ($request->filled('min_price')) {
+                $query->where('price', '>=', (float) $request->query('min_price'));
+            }
 
-        $query->latest('updated_at');
+            if ($request->filled('max_price')) {
+                $query->where('price', '<=', (float) $request->query('max_price'));
+            }
 
-        return ProductResource::collection($query->paginate($perPage));
+            $query->latest('updated_at');
+
+            return $query->paginate($perPage);
+        });
+
+        return ProductResource::collection($products);
     }
 
     public function show(Product $product): ProductResource
     {
+        $cacheKey = 'products:show:' . $product->id;
+        
+        $product = Cache::remember($cacheKey, now()->addMinutes(10), fn () => $product);
+
         return new ProductResource($product);
     }
 }

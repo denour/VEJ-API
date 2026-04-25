@@ -12,7 +12,7 @@ return [
     */
 
     'text_provider' => env('AI_TEXT_PROVIDER', 'openai'),
-    'image_provider' => env('AI_IMAGE_PROVIDER', 'banana'),
+    'image_provider' => env('AI_IMAGE_PROVIDER', 'openai'),
 
     /*
     |--------------------------------------------------------------------------
@@ -51,7 +51,7 @@ return [
         ],
         'openai' => [
             'api_key' => env('OPENAI_API_KEY'),
-            'model' => env('OPENAI_IMAGE_MODEL', 'dall-e-3'),
+            'model' => env('OPENAI_IMAGE_MODEL', 'gpt-image-1'),
         ],
         'mock' => [
             'task_id' => env('MOCK_BANANA_TASK_ID', '6cf7ba74ee3e25a08b161392444af4222345'),

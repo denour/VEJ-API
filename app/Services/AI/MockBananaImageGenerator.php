@@ -34,6 +34,11 @@ class MockBananaImageGenerator implements ImageGeneratorInterface
         return 'MockBanana';
     }
 
+    public function isSynchronous(): bool
+    {
+        return false;
+    }
+
     /**
      * @return array{status: string, imageUrl?: string, error?: string}
      */

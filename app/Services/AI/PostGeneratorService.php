@@ -202,29 +202,53 @@ class PostGeneratorService
                 $imagePrompt = $this->generateImagePrompt($description);
 
                 try {
-                    $taskId = $this->imageGenerator->generate($imagePrompt, [
-                        'aspectRatio' => '16:9',
-                        'resolution' => '2K',
-                        'imageUrls' => [''],
-                        'callBackUrl' => url('api/webhooks/banana'),
-                    ]);
+                    $options = ['aspectRatio' => '16:9', 'resolution' => '2K'];
 
-                    $request = ImageGenerationRequest::query()->create([
-                        'external_id' => $taskId,
-                        'post_id' => $post->id,
-                        'targetable_type' => PostBlock::class,
-                        'targetable_id' => $block->id,
-                        'prompt' => $imagePrompt,
-                        'status' => 'pending',
-                        'metadata' => [
-                            'attribute' => 'data.url',
-                            'model_name' => 'PostBlock',
-                            'block_id' => $block->id,
-                        ],
-                    ]);
+                    if (! $this->imageGenerator->isSynchronous()) {
+                        $options['imageUrls'] = [''];
+                        $options['callBackUrl'] = url('api/webhooks/banana');
+                    }
 
-                    // Dispatch polling job as fallback (60 seconds delay)
-                    PollImageGenerationStatus::dispatch($request)->delay(now()->addSeconds(60));
+                    $response = $this->imageGenerator->generate($imagePrompt, $options);
+
+                    if ($this->imageGenerator->isSynchronous()) {
+                        $data = $block->data ?? [];
+                        $data['url'] = $response;
+                        $block->update(['data' => $data]);
+
+                        ImageGenerationRequest::query()->create([
+                            'external_id' => null,
+                            'post_id' => $post->id,
+                            'targetable_type' => PostBlock::class,
+                            'targetable_id' => $block->id,
+                            'prompt' => $imagePrompt,
+                            'status' => 'completed',
+                            'image_url' => $response,
+                            'metadata' => [
+                                'attribute' => 'data.url',
+                                'model_name' => 'PostBlock',
+                                'block_id' => $block->id,
+                                'provider' => $this->imageGenerator->getProviderName(),
+                            ],
+                        ]);
+                    } else {
+                        $request = ImageGenerationRequest::query()->create([
+                            'external_id' => $response,
+                            'post_id' => $post->id,
+                            'targetable_type' => PostBlock::class,
+                            'targetable_id' => $block->id,
+                            'prompt' => $imagePrompt,
+                            'status' => 'pending',
+                            'metadata' => [
+                                'attribute' => 'data.url',
+                                'model_name' => 'PostBlock',
+                                'block_id' => $block->id,
+                                'provider' => $this->imageGenerator->getProviderName(),
+                            ],
+                        ]);
+
+                        PollImageGenerationStatus::dispatch($request)->delay(now()->addSeconds(60));
+                    }
                 } catch (\Throwable $e) {
                     \Illuminate\Support\Facades\Log::error('Failed to generate content image', [
                         'post_id' => $post->id,
@@ -615,29 +639,53 @@ PROMPT;
                 $imagePrompt = $this->generateImagePrompt($block['description']);
 
                 try {
-                    $taskId = $this->imageGenerator->generate($imagePrompt, [
-                        'aspectRatio' => '16:9',
-                        'resolution' => '2K',
-                        'imageUrls' => [''],
-                        'callBackUrl' => url('api/webhooks/banana'),
-                    ]);
+                    $options = ['aspectRatio' => '16:9', 'resolution' => '2K'];
 
-                    $request = ImageGenerationRequest::query()->create([
-                        'external_id' => $taskId,
-                        'post_id' => $post->id,
-                        'targetable_type' => PostBlock::class,
-                        'targetable_id' => $postBlock->id,
-                        'prompt' => $imagePrompt,
-                        'status' => 'pending',
-                        'metadata' => [
-                            'attribute' => 'data.url',
-                            'model_name' => 'PostBlock',
-                            'block_id' => $postBlock->id,
-                        ],
-                    ]);
+                    if (! $this->imageGenerator->isSynchronous()) {
+                        $options['imageUrls'] = [''];
+                        $options['callBackUrl'] = url('api/webhooks/banana');
+                    }
 
-                    // Dispatch polling job as fallback (60 seconds delay)
-                    PollImageGenerationStatus::dispatch($request)->delay(now()->addSeconds(60));
+                    $response = $this->imageGenerator->generate($imagePrompt, $options);
+
+                    if ($this->imageGenerator->isSynchronous()) {
+                        $data = $postBlock->data ?? [];
+                        $data['url'] = $response;
+                        $postBlock->update(['data' => $data]);
+
+                        ImageGenerationRequest::query()->create([
+                            'external_id' => null,
+                            'post_id' => $post->id,
+                            'targetable_type' => PostBlock::class,
+                            'targetable_id' => $postBlock->id,
+                            'prompt' => $imagePrompt,
+                            'status' => 'completed',
+                            'image_url' => $response,
+                            'metadata' => [
+                                'attribute' => 'data.url',
+                                'model_name' => 'PostBlock',
+                                'block_id' => $postBlock->id,
+                                'provider' => $this->imageGenerator->getProviderName(),
+                            ],
+                        ]);
+                    } else {
+                        $request = ImageGenerationRequest::query()->create([
+                            'external_id' => $response,
+                            'post_id' => $post->id,
+                            'targetable_type' => PostBlock::class,
+                            'targetable_id' => $postBlock->id,
+                            'prompt' => $imagePrompt,
+                            'status' => 'pending',
+                            'metadata' => [
+                                'attribute' => 'data.url',
+                                'model_name' => 'PostBlock',
+                                'block_id' => $postBlock->id,
+                                'provider' => $this->imageGenerator->getProviderName(),
+                            ],
+                        ]);
+
+                        PollImageGenerationStatus::dispatch($request)->delay(now()->addSeconds(60));
+                    }
                 } catch (\Throwable $e) {
                     \Illuminate\Support\Facades\Log::error('Failed to generate content image', [
                         'post_id' => $post->id,
@@ -676,28 +724,49 @@ Requirements:
 PROMPT;
 
         try {
-            $taskId = $this->imageGenerator->generate($prompt, [
-                'aspectRatio' => '16:9',
-                'resolution' => '2K',
-                'imageUrls' => [''],
-                'callBackUrl' => url('api/webhooks/banana'),
-            ]);
+            $options = ['aspectRatio' => '16:9', 'resolution' => '2K', 'directory' => 'posts'];
 
-            $request = ImageGenerationRequest::query()->create([
-                'external_id' => $taskId,
-                'post_id' => $post->id,
-                'targetable_type' => Post::class,
-                'targetable_id' => $post->id,
-                'prompt' => $prompt,
-                'status' => 'pending',
-                'metadata' => [
-                    'attribute' => 'cover_image',
-                    'model_name' => 'Post',
-                ],
-            ]);
+            if (! $this->imageGenerator->isSynchronous()) {
+                $options['imageUrls'] = [''];
+                $options['callBackUrl'] = url('api/webhooks/banana');
+            }
 
-            // Dispatch polling job as fallback (60 seconds delay)
-            PollImageGenerationStatus::dispatch($request)->delay(now()->addSeconds(60));
+            $response = $this->imageGenerator->generate($prompt, $options);
+
+            if ($this->imageGenerator->isSynchronous()) {
+                $post->update(['cover_image' => $response]);
+
+                ImageGenerationRequest::query()->create([
+                    'external_id' => null,
+                    'post_id' => $post->id,
+                    'targetable_type' => Post::class,
+                    'targetable_id' => $post->id,
+                    'prompt' => $prompt,
+                    'status' => 'completed',
+                    'image_url' => $response,
+                    'metadata' => [
+                        'attribute' => 'cover_image',
+                        'model_name' => 'Post',
+                        'provider' => $this->imageGenerator->getProviderName(),
+                    ],
+                ]);
+            } else {
+                $request = ImageGenerationRequest::query()->create([
+                    'external_id' => $response,
+                    'post_id' => $post->id,
+                    'targetable_type' => Post::class,
+                    'targetable_id' => $post->id,
+                    'prompt' => $prompt,
+                    'status' => 'pending',
+                    'metadata' => [
+                        'attribute' => 'cover_image',
+                        'model_name' => 'Post',
+                        'provider' => $this->imageGenerator->getProviderName(),
+                    ],
+                ]);
+
+                PollImageGenerationStatus::dispatch($request)->delay(now()->addSeconds(60));
+            }
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error('Failed to generate post cover image', [
                 'post_id' => $post->id,

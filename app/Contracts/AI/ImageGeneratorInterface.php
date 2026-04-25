@@ -20,4 +20,10 @@ interface ImageGeneratorInterface
      * @return array{status: string, imageUrl?: string, error?: string}
      */
     public function getTaskStatus(string $taskId): array;
+
+    /**
+     * Whether the provider returns a final image URL synchronously from generate().
+     * Async providers (Banana) return a taskId; sync providers (OpenAI) return the S3 URL directly.
+     */
+    public function isSynchronous(): bool;
 }

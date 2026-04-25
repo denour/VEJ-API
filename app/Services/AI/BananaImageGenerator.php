@@ -78,6 +78,11 @@ class BananaImageGenerator implements ImageGeneratorInterface
         return 'Banana';
     }
 
+    public function isSynchronous(): bool
+    {
+        return false;
+    }
+
     /**
      * Get the status of a task from Banana API.
      *

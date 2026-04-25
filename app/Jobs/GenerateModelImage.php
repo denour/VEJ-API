@@ -46,30 +46,64 @@ class GenerateModelImage implements ShouldQueue
         try {
             $finalPrompt = $this->prompt ?? $this->generatePrompt();
 
-            $response = $generator->generate($finalPrompt, [
-                'callBackUrl' => url('api/webhooks/banana'),
+            $options = [
                 'aspectRatio' => '16:9',
                 'resolution' => '2K',
-                'imageUrls' => [''],
-            ]);
+                'directory' => $this->getStorageDirectory(),
+            ];
 
-            ImageGenerationRequest::query()->create([
-                'external_id' => $response,
-                'targetable_type' => get_class($this->model),
-                'targetable_id' => $this->model->getKey(),
-                'prompt' => $finalPrompt,
-                'status' => 'pending',
-                'metadata' => [
-                    'attribute' => $this->attribute,
-                    'model_name' => $this->getModelName(),
-                ],
-            ]);
+            if (! $generator->isSynchronous()) {
+                $options['callBackUrl'] = url('api/webhooks/banana');
+                $options['imageUrls'] = [''];
+            }
 
-            Log::info('Image generation request created', [
-                'model' => get_class($this->model),
-                'id' => $this->model->getKey(),
-                'task_id' => $response,
-            ]);
+            $response = $generator->generate($finalPrompt, $options);
+
+            if ($generator->isSynchronous()) {
+                // Sync providers (OpenAI) return the final S3 URL directly
+                $this->model->{$this->attribute} = $response;
+                $this->model->save();
+
+                ImageGenerationRequest::query()->create([
+                    'external_id' => null,
+                    'targetable_type' => get_class($this->model),
+                    'targetable_id' => $this->model->getKey(),
+                    'prompt' => $finalPrompt,
+                    'status' => 'completed',
+                    'image_url' => $response,
+                    'metadata' => [
+                        'attribute' => $this->attribute,
+                        'model_name' => $this->getModelName(),
+                        'provider' => $generator->getProviderName(),
+                    ],
+                ]);
+
+                Log::info('Image generated synchronously', [
+                    'model' => get_class($this->model),
+                    'id' => $this->model->getKey(),
+                    'url' => $response,
+                ]);
+            } else {
+                // Async providers (Banana) return a taskId for polling
+                ImageGenerationRequest::query()->create([
+                    'external_id' => $response,
+                    'targetable_type' => get_class($this->model),
+                    'targetable_id' => $this->model->getKey(),
+                    'prompt' => $finalPrompt,
+                    'status' => 'pending',
+                    'metadata' => [
+                        'attribute' => $this->attribute,
+                        'model_name' => $this->getModelName(),
+                        'provider' => $generator->getProviderName(),
+                    ],
+                ]);
+
+                Log::info('Image generation request created (async)', [
+                    'model' => get_class($this->model),
+                    'id' => $this->model->getKey(),
+                    'task_id' => $response,
+                ]);
+            }
         } catch (\Throwable $e) {
             Log::error('Failed to generate image for model', [
                 'model' => get_class($this->model),
@@ -123,5 +157,17 @@ class GenerateModelImage implements ShouldQueue
         $parts = explode('\\', $class);
 
         return end($parts);
+    }
+
+    private function getStorageDirectory(): string
+    {
+        return match (get_class($this->model)) {
+            \App\Models\Post::class => 'posts',
+            \App\Models\PostBlock::class => 'posts/blocks',
+            \App\Models\Author::class => 'authors',
+            \App\Models\Product::class => 'products',
+            \App\Models\Species::class => 'species',
+            default => 'misc',
+        };
     }
 }

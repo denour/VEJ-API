@@ -162,14 +162,15 @@ class PostContentAssistantService
             $postId = $context['post_id'] ?? null;
             $blockId = $context['block_id'] ?? null;
 
-            // Build a descriptive image prompt based on context
             $imagePrompt = match ($fieldType) {
                 'cover_image' => "Professional high-quality featured image for a gardening blog post titled '{$postTitle}'. Category: {$postCategory}. Photorealistic, vibrant colors, natural lighting, inspiring gardening scene.",
                 'block_image' => "Illustrative image for gardening blog content. Context: {$userPrompt}. Photorealistic, educational, clear and detailed.",
                 default => $userPrompt,
             };
 
-            \Log::info('Generando imagen para post con Banana', [
+            $providerName = $this->imageGenerator->getProviderName();
+
+            \Log::info("Generando imagen para post con {$providerName}", [
                 'postTitle' => $postTitle,
                 'postId' => $postId,
                 'blockId' => $blockId,
@@ -177,17 +178,77 @@ class PostContentAssistantService
                 'prompt' => $imagePrompt,
             ]);
 
-            $taskId = $this->imageGenerator->generate($imagePrompt, [
+            $options = [
                 'aspectRatio' => $fieldType === 'cover_image' ? '16:9' : '4:3',
                 'resolution' => '2K',
-            ]);
+            ];
 
-            \Log::info('Imagen taskId generado', ['taskId' => $taskId]);
+            if (! $this->imageGenerator->isSynchronous()) {
+                $options['imageUrls'] = [''];
+                $options['callBackUrl'] = url('api/webhooks/banana');
+            }
 
-            // For block images with a block_id, target the PostBlock directly
+            $response = $this->imageGenerator->generate($imagePrompt, $options);
+
+            if ($this->imageGenerator->isSynchronous()) {
+                // Sync provider: response is the final S3 URL
+                $status = 'completed';
+                $imageUrl = $response;
+
+                if ($fieldType === 'block_image' && $blockId) {
+                    $block = \App\Models\PostBlock::find($blockId);
+                    if ($block) {
+                        $data = $block->data ?? [];
+                        $data['url'] = $imageUrl;
+                        $block->update(['data' => $data]);
+                    }
+
+                    ImageGenerationRequest::create([
+                        'external_id' => null,
+                        'targetable_type' => \App\Models\PostBlock::class,
+                        'targetable_id' => $blockId,
+                        'prompt' => $imagePrompt,
+                        'status' => 'completed',
+                        'image_url' => $imageUrl,
+                        'metadata' => [
+                            'attribute' => 'data.url',
+                            'post_title' => $postTitle,
+                            'provider' => $providerName,
+                        ],
+                    ]);
+                } elseif ($postId) {
+                    $post = \App\Models\Post::find($postId);
+                    if ($post && $fieldType === 'cover_image') {
+                        $post->update(['cover_image' => $imageUrl]);
+                    }
+
+                    ImageGenerationRequest::create([
+                        'external_id' => null,
+                        'targetable_type' => \App\Models\Post::class,
+                        'targetable_id' => $postId,
+                        'prompt' => $imagePrompt,
+                        'status' => 'completed',
+                        'image_url' => $imageUrl,
+                        'metadata' => [
+                            'attribute' => $fieldType === 'cover_image' ? 'cover_image' : 'block_image',
+                            'post_title' => $postTitle,
+                            'provider' => $providerName,
+                        ],
+                    ]);
+                }
+
+                return [
+                    'success' => true,
+                    'type' => 'text',
+                    'value' => $imageUrl,
+                    'pending' => false,
+                ];
+            }
+
+            // Async provider: response is a taskId
             if ($fieldType === 'block_image' && $blockId) {
                 ImageGenerationRequest::create([
-                    'external_id' => $taskId,
+                    'external_id' => $response,
                     'targetable_type' => \App\Models\PostBlock::class,
                     'targetable_id' => $blockId,
                     'prompt' => $imagePrompt,
@@ -196,12 +257,12 @@ class PostContentAssistantService
                     'metadata' => [
                         'attribute' => 'data.url',
                         'post_title' => $postTitle,
+                        'provider' => $providerName,
                     ],
                 ]);
             } elseif ($postId) {
-                // For cover images or blocks without ID, target the Post
                 ImageGenerationRequest::create([
-                    'external_id' => $taskId,
+                    'external_id' => $response,
                     'targetable_type' => \App\Models\Post::class,
                     'targetable_id' => $postId,
                     'prompt' => $imagePrompt,
@@ -210,6 +271,7 @@ class PostContentAssistantService
                     'metadata' => [
                         'attribute' => $fieldType === 'cover_image' ? 'cover_image' : 'block_image',
                         'post_title' => $postTitle,
+                        'provider' => $providerName,
                     ],
                 ]);
             }
@@ -217,12 +279,12 @@ class PostContentAssistantService
             return [
                 'success' => true,
                 'type' => 'text',
-                'value' => "🎨 Generando imagen... (TaskID: {$taskId})",
-                'taskId' => $taskId,
+                'value' => "Generando imagen... (TaskID: {$response})",
+                'taskId' => $response,
                 'pending' => true,
             ];
         } catch (\Exception $e) {
-            \Log::error('Error generando imagen para post con Banana', [
+            \Log::error('Error generando imagen', [
                 'error' => $e->getMessage(),
                 'context' => $context,
             ]);

@@ -30,6 +30,10 @@ class Post extends Model
         'reading_time',
         'featured',
         'status',
+        'social_image',
+        'facebook_post_id',
+        'instagram_post_id',
+        'social_published_at',
     ];
 
     protected function casts(): array
@@ -40,6 +44,7 @@ class Post extends Model
             'list' => 'array',
             'published_at' => 'datetime',
             'featured' => 'boolean',
+            'social_published_at' => 'datetime',
         ];
     }
 

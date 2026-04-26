@@ -30,7 +30,7 @@ class PostGeneratorService
 
         $slug = Str::slug($data['title']);
 
-        return DB::transaction(function () use ($slug, $data, $author) {
+        return DB::transaction(function () use ($slug, $data, $author, $options) {
             $post = Post::updateOrCreate(
                 ['slug' => $slug],
                 [
@@ -41,9 +41,10 @@ class PostGeneratorService
                     'category' => $data['category'],
                     'tags' => $data['tags'],
                     'author_id' => $author->id,
-                    'status' => 'draft',
+                    'status' => $options['status'] ?? 'draft',
                     'featured' => false,
                     'reading_time' => $data['reading_time'],
+                    'published_at' => $options['published_at'] ?? null,
                 ]
             );
 

@@ -50,6 +50,21 @@ class Author extends Model
         return $this->hasMany(Post::class);
     }
 
+    public function topics(): HasMany
+    {
+        return $this->hasMany(AuthorTopic::class);
+    }
+
+    public function nextAvailableTopic(): ?AuthorTopic
+    {
+        return $this->topics()->unused()->oldest('created_at')->first();
+    }
+
+    public function unusedTopicCount(): int
+    {
+        return $this->topics()->unused()->count();
+    }
+
     public function isComplete(): bool
     {
         return filled($this->voice_bible)

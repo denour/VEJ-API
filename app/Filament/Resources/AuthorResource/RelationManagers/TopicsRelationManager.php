@@ -4,10 +4,13 @@ namespace App\Filament\Resources\AuthorResource\RelationManagers;
 
 use App\Services\AI\TopicGeneratorService;
 use Filament\Actions\Action;
+use Filament\Actions\DeleteAction;
+use Filament\Actions\DeleteBulkAction;
+use Filament\Actions\EditAction;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Schemas\Components\Select;
-use Filament\Schemas\Components\TextInput;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -47,7 +50,6 @@ class TopicsRelationManager extends RelationManager
             ->headerActions([
                 Action::make('generateTopics')
                     ->label('Generar Temas con AI')
-                    ->icon('heroicon-o-sparkles')
                     ->action(function (): void {
                         $author = $this->getOwnerRecord();
                         $generator = app(TopicGeneratorService::class);
@@ -60,11 +62,11 @@ class TopicsRelationManager extends RelationManager
                     }),
             ])
             ->actions([
-                \Filament\Tables\Actions\EditAction::make(),
-                \Filament\Tables\Actions\DeleteAction::make(),
+                EditAction::make(),
+                DeleteAction::make(),
             ])
             ->bulkActions([
-                \Filament\Tables\Actions\DeleteBulkAction::make(),
+                DeleteBulkAction::make(),
             ]);
     }
 

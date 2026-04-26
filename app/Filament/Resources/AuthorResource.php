@@ -7,6 +7,7 @@ use App\Enums\SentenceStyle;
 use App\Enums\VocabularyLevel;
 use App\Enums\WritingTone;
 use App\Filament\Resources\AuthorResource\Pages;
+use App\Filament\Resources\AuthorResource\RelationManagers;
 use App\Models\Author;
 use App\Services\AI\PersonaFieldAssistantService;
 use BackedEnum;

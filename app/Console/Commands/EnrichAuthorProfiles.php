@@ -5,7 +5,6 @@ namespace App\Console\Commands;
 use App\Models\Author;
 use App\Services\AI\AuthorProfileEnricherService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Str;
 
 class EnrichAuthorProfiles extends Command
 {
@@ -76,7 +75,7 @@ class EnrichAuthorProfiles extends Command
                 $a->name,
                 $a->tone ?? '-',
                 implode(', ', array_slice($a->expertise_areas ?? [], 0, 3)),
-                $a->voice_bible ? 'Yes ('.Str::wordCount($a->voice_bible).' words)' : 'No',
+                $a->voice_bible ? 'Yes ('.str_word_count($a->voice_bible).' words)' : 'No',
             ])->toArray()
         );
 

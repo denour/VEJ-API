@@ -10,7 +10,8 @@ return new class extends Migration
     {
         Schema::create('author_topics', function (Blueprint $table): void {
             $table->ulid('id')->primary();
-            $table->foreignUlid('author_id')->constrained('authors')->cascadeOnDelete();
+            $table->unsignedBigInteger('author_id');
+            $table->foreign('author_id')->references('id')->on('authors')->cascadeOnDelete();
             $table->string('topic');
             $table->string('category')->nullable();
             $table->timestamp('used_at')->nullable();

@@ -149,6 +149,8 @@ class PostGeneratorService
     public function generatePostData(Author $author, ?string $topic = null, array $options = []): array
     {
         $authorAttributes = $this->extractAuthorAttributes($author);
+        $authorAttributes['voice_bible'] = $author->voice_bible;
+        $authorAttributes['author_name'] = $author->name;
         $structure = $this->generatePostStructure($author, $authorAttributes, $topic, $options);
         $contentBlocks = $this->generateContentBlocks($structure['blocks'], $authorAttributes);
         $tableOfContents = $this->generateTableOfContents($contentBlocks);
@@ -266,17 +268,17 @@ class PostGeneratorService
      */
     private function extractAuthorAttributes(Author $author): array
     {
-        if (empty($author->detailed_description)) {
-            return [
-                'tone' => 'conversacional y educativo',
-                'personality' => 'entusiasta',
-                'writing_style' => 'claro y accesible',
-                'themes' => ['jardinería', 'plantas'],
-                'editorial_focus' => 'educación práctica',
-            ];
-        }
-
-        return $this->authorDescriptionService->extractAttributes($author->detailed_description);
+        return [
+            'tone' => $author->tone ?? 'conversacional y educativo',
+            'personality' => ! empty($author->personality_traits)
+                ? implode(', ', $author->personality_traits)
+                : 'entusiasta',
+            'writing_style' => $author->sentence_style ?? 'claro y accesible',
+            'themes' => $author->expertise_areas ?? ['jardinería', 'plantas'],
+            'editorial_focus' => ! empty($author->recurring_topics)
+                ? implode(', ', $author->recurring_topics)
+                : 'educación práctica',
+        ];
     }
 
     /**
@@ -295,37 +297,48 @@ class PostGeneratorService
         };
 
         $prompt = <<<PROMPT
-Genera una idea para un post sobre jardinería y plantas para un blog llamado "Vida en el Jardín".
-El post debe ser educativo, práctico y atractivo para aficionados a la jardinería.
+Genera la estructura editorial para un artículo del blog "Vida en el Jardín" (blog mexicano de jardinería).
 
-IMPORTANTE - El autor tiene estas características que DEBES reflejar:
+AUTOR: {$author->name}
 - Tono: {$authorAttributes['tone']}
 - Personalidad: {$authorAttributes['personality']}
-- Estilo de escritura: {$authorAttributes['writing_style']}
-- Temas principales: {$themesString}
-- Foco Editorial: {$editorialFocus}
+- Estilo: {$authorAttributes['writing_style']}
+- Especialidades: {$themesString}
 {$topicInstruction}
 
-Responde ÚNICAMENTE en formato JSON válido con la siguiente estructura:
+ESTRUCTURA OBLIGATORIA — el artículo debe tener EXACTAMENTE esta forma:
+
+1. Un párrafo introductorio (hook que atrape al lector)
+2. Sección 1: heading H2 + 1-2 párrafos informativos
+3. Una imagen contextual
+4. Sección 2: heading H2 + 1-2 párrafos con tips prácticos
+5. Una lista de pasos o consejos concretos
+6. Sección 3: heading H2 + 1 párrafo de cierre/reflexión
+7. Una cita inspiradora relacionada con el tema
+
+TOTAL: mínimo 3 headings H2, mínimo 6 párrafos, 1 imagen, 1 lista, 1 quote.
+
+Responde ÚNICAMENTE en JSON válido:
 {
-    "title": "Título del post",
-    "excerpt": "Breve descripción del post (2-3 oraciones)",
+    "title": "Título atractivo y SEO (40-65 caracteres)",
+    "excerpt": "Descripción que enganche (2-3 oraciones, máximo 160 caracteres)",
     "category": "Una de: Cuidado, Identificación, Decoración, Herramientas, Consejos",
-    "tags": ["tag1", "tag2", "tag3"],
+    "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
     "blocks": [
-        {
-            "type": "paragraph|heading|image|list|quote",
-            "title: "titulo del bloque.",
-            "description": "Descripción de qué debe contener este bloque"
-        }
+        {"type": "paragraph", "description": "Intro: qué problema resuelve y por qué importa"},
+        {"type": "heading", "description": "Título de sección 1"},
+        {"type": "paragraph", "description": "Contenido detallado de sección 1"},
+        {"type": "paragraph", "description": "Más detalle o ejemplo práctico de sección 1"},
+        {"type": "image", "description": "Descripción visual de lo que debe mostrar la imagen"},
+        {"type": "heading", "description": "Título de sección 2"},
+        {"type": "paragraph", "description": "Tips prácticos de sección 2"},
+        {"type": "paragraph", "description": "Ejemplo o anécdota de sección 2"},
+        {"type": "list", "description": "Lista de 5-7 pasos o consejos concretos"},
+        {"type": "heading", "description": "Título de sección 3 - cierre"},
+        {"type": "paragraph", "description": "Reflexión final o call-to-action"},
+        {"type": "quote", "description": "Cita inspiradora sobre el tema"}
     ]
 }
-
-{$lengthInstruction} incluyendo:
-- Al menos un heading
-- Al menos 2-3 párrafos
-- Al menos 1 imagen
-- Al menos 3 bloques de lista
 PROMPT;
 
         $response = $this->textGenerator->generate($prompt, [
@@ -351,8 +364,8 @@ PROMPT;
             $contentBlocks[] = match ($block['type']) {
                 'heading' => $this->generateHeading($block['description']),
                 'image' => $this->generateImageBlock($block['description']),
-                //                'list' => $this->generateList($block['description'], $authorAttributes),
-                'quote' => $this->generateQuote($block['description']),
+                'list' => $this->generateList($block['description'], $authorAttributes),
+                'quote' => $this->generateQuote($block['description'], $authorAttributes),
                 default => $this->generateParagraph($block['description'], $authorAttributes),
             };
         }
@@ -362,30 +375,27 @@ PROMPT;
 
     private function generateParagraph(string $description, array $authorAttributes): array
     {
-        $editorialFocus = is_array($authorAttributes['editorial_focus']) ? implode(', ', $authorAttributes['editorial_focus']) : $authorAttributes['editorial_focus'];
+        $authorName = $authorAttributes['author_name'] ?? 'el autor';
         $prompt = <<<PROMPT
-Genera un párrafo para un blog de jardinería basado en esta descripción:
-{$description}
+Escribe un párrafo para el blog "Vida en el Jardín".
 
-IMPORTANTE - Escribe con estas características del autor:
-- Tono: {$authorAttributes['tone']}
-- Personalidad: {$authorAttributes['personality']}
-- Foco Editorial: {$editorialFocus}
-- Estilo de escritura: {$authorAttributes['writing_style']}
+INSTRUCCIÓN: {$description}
 
-El párrafo debe ser:
-- Informativo y práctico
+REGLAS:
 - Entre 80-150 palabras
-- En español
+- En español mexicano
 - Sin formato markdown, solo texto plano
-- Debe reflejar el tono y personalidad del autor
-
-Responde ÚNICAMENTE con el texto del párrafo, sin etiquetas ni formato adicional.
+- Informativo, práctico, con personalidad
+- Responde ÚNICAMENTE con el texto del párrafo
 PROMPT;
 
-        $text = $this->textGenerator->generate($prompt, [
-            'max_tokens' => 300,
-        ]);
+        $options = ['max_tokens' => 300];
+
+        if (! empty($authorAttributes['voice_bible'])) {
+            $options['system'] = "Eres {$authorName}, escritor del blog 'Vida en el Jardín'. Escribe SIEMPRE en primera persona siguiendo esta guía de voz:\n\n{$authorAttributes['voice_bible']}";
+        }
+
+        $text = $this->textGenerator->generate($prompt, $options);
 
         return [
             'type' => 'paragraph',
@@ -396,15 +406,17 @@ PROMPT;
     private function generateHeading(string $description): array
     {
         $prompt = <<<PROMPT
-Generate a short, descriptive section heading (maximum 8 words) in Spanish for a gardening blog based on this description: {$description}
+Genera un subtítulo de sección (H2) para un artículo de jardinería.
 
-The heading must:
-- Be highly SEO-optimized using natural, relevant keywords
-- Be catchy, engaging, and original
-- Sound clear and appealing to plant enthusiasts
-- Avoid punctuation and formatting
+Descripción de la sección: {$description}
 
-Respond ONLY with the final title text.
+REGLAS:
+- Máximo 8 palabras en español
+- Debe ser descriptivo y atractivo
+- Sin puntuación final ni formato
+- Optimizado para SEO con keywords naturales
+
+Responde SOLO con el texto del subtítulo.
 PROMPT;
 
         $text = $this->textGenerator->generate($prompt, [
@@ -503,23 +515,15 @@ PROMPT;
         ];
     }
 
-    private function generateQuote(string $description): array
+    private function generateQuote(string $description, array $authorAttributes = []): array
     {
         $prompt = <<<PROMPT
-Genera una cita inspiradora relacionada con jardinería y plantas basada en:
-{$description}
+Genera una cita inspiradora sobre jardinería basada en: {$description}
 
-La cita debe ser:
-- Inspiradora y memorable
-- Entre 15-30 palabras
-- En español
-- Puede ser de un autor real o creada
+- Inspiradora y memorable, entre 15-30 palabras, en español
+- Puede ser de un autor real, proverbio popular, o del propio autor del blog
 
-Responde en formato JSON:
-{
-    "text": "La cita",
-    "author": "Autor (puede ser 'Proverbio popular' o un nombre real)"
-}
+Responde en formato JSON: {"text": "La cita", "author": "Autor"}
 PROMPT;
 
         $response = $this->textGenerator->generate($prompt, [

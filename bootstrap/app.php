@@ -28,5 +28,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('images:poll-pending')
             ->everyThirtySeconds()
             ->withoutOverlapping();
+
+        // Process queued jobs inline (no dedicated worker instance)
+        $schedule->command('queue:work --stop-when-empty --max-time=50')
+            ->everyMinute()
+            ->withoutOverlapping();
     })
     ->create();

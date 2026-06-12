@@ -13,6 +13,7 @@ class SpeciesResource extends JsonResource
             'id' => (string) $this->id,
             'commonName' => $this->common_name,
             'scientificName' => $this->scientific_name,
+            'slug' => $this->slug,
             'family' => $this->family,
             'origin' => $this->origin,
             'description' => $this->description,

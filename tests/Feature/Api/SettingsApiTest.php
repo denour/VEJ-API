@@ -3,7 +3,6 @@
 namespace Tests\Feature\Api;
 
 use App\Models\Setting;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -11,48 +10,23 @@ class SettingsApiTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_get_settings_returns_defaults_structure(): void
+    public function test_get_settings_returns_key_value_collection(): void
+    {
+        Setting::query()->create(['key' => 'site_name', 'value' => ['value' => 'Vida en el Jardín'], 'type' => 'string']);
+        Setting::query()->create(['key' => 'maintenance', 'value' => ['value' => true], 'type' => 'boolean']);
+
+        $this->getJson('/api/v1/settings')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonStructure(['data' => [['key', 'value', 'type', 'updated_at']]])
+            ->assertJsonFragment(['key' => 'site_name', 'value' => 'Vida en el Jardín'])
+            ->assertJsonFragment(['key' => 'maintenance', 'value' => true]);
+    }
+
+    public function test_get_settings_returns_empty_collection_when_no_settings(): void
     {
         $this->getJson('/api/v1/settings')
             ->assertOk()
-            ->assertJsonStructure([
-                'data' => [
-                    'site_name', 'phone', 'address', 'socials', 'logo', 'favicon', 'updated_at',
-                ],
-            ]);
-    }
-
-    public function test_put_settings_requires_auth(): void
-    {
-        $this->putJson('/api/v1/settings', ['site_name' => 'Mi Sitio'])
-            ->assertStatus(401);
-    }
-
-    public function test_put_settings_updates_values_when_authenticated(): void
-    {
-        $user = User::factory()->create();
-
-        $payload = [
-            'site_name' => 'Mi Sitio',
-            'phone' => '+52 55 1234 5678',
-            'address' => 'CDMX',
-            'socials' => [
-                'facebook' => 'https://facebook.com/misitio',
-                'instagram' => 'https://instagram.com/misitio',
-            ],
-            'logo' => 'https://cdn.example.com/logo.png',
-            'favicon' => 'https://cdn.example.com/favicon.ico',
-        ];
-
-        $this->actingAs($user)
-            ->putJson('/api/v1/settings', $payload)
-            ->assertOk()
-            ->assertJsonPath('data.site_name', 'Mi Sitio');
-
-        $this->assertDatabaseHas(Setting::class, [
-            'site_name' => 'Mi Sitio',
-            'phone' => '+52 55 1234 5678',
-            'address' => 'CDMX',
-        ]);
+            ->assertJsonCount(0, 'data');
     }
 }

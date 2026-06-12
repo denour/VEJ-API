@@ -21,7 +21,7 @@ class Setting extends Model
 
     protected static function booted(): void
     {
-        static::saving(function (AppSetting $setting): void {
+        static::saving(function (Setting $setting): void {
             if ($setting->type === null || $setting->type === '') {
                 $setting->type = 'string';
             }

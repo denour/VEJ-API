@@ -35,7 +35,7 @@ Route::prefix('v1')->group(function (): void {
 
     // Species
     Route::get('species', [SpeciesController::class, 'index']);
-    Route::get('species/{species}', [SpeciesController::class, 'show']);
+    Route::get('species/{species:slug}', [SpeciesController::class, 'show']);
 
     // Newsletter
     Route::post('newsletter/subscribe', [NewsletterSubscriptionController::class, 'store']);

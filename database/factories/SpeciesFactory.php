@@ -23,7 +23,7 @@ class SpeciesFactory extends Factory
             'care_level' => $this->faker->randomElement(['easy', 'medium', 'hard']),
             'sunlight' => $this->faker->randomElement(['low', 'medium', 'high']),
             'watering' => $this->faker->randomElement(['low', 'medium', 'high']),
-            'image' => null,
+            'image' => 'https://example.com/species/'.$this->faker->slug(2).'.png',
             'images' => [],
             'toxicity' => $this->faker->randomElement(['none', 'pets', 'humans', 'both']),
             'growth_rate' => $this->faker->randomElement(['slow', 'medium', 'fast']),

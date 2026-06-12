@@ -79,7 +79,7 @@ class SettingResource extends Resource
                         ->required(),
                 ]),
                 Section::make('Metadatos')->columnSpan(4)->schema([
-                    Forms\Components\Placeholder::make('updated_at')->label('Actualizado')->content(fn (?AppSetting $record) => $record?->updated_at?->diffForHumans() ?? '-'),
+                    Forms\Components\Placeholder::make('updated_at')->label('Actualizado')->content(fn (?Setting $record) => $record?->updated_at?->diffForHumans() ?? '-'),
                 ]),
             ]),
         ]);

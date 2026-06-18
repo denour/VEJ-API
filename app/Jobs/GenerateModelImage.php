@@ -139,9 +139,8 @@ class GenerateModelImage implements ShouldQueue
     {
         $title = $this->model->title;
         $excerpt = $this->model->excerpt ? Str::limit($this->model->excerpt, 100) : '';
-        $category = $this->model->category ?? 'garden';
 
-        return "Create a professional cover image for a blog post titled '{$title}' in the {$category} category. {$excerpt}. Modern, clean, and engaging design.";
+        return "Create a captivating, photorealistic hero PHOTOGRAPH for a gardening blog. Visual theme (use ONLY as inspiration for the scene — never render this text, or any words, in the image): {$title}. {$excerpt}. Requirements: a real-looking photograph of plants, gardens or greenery as if shot with a professional camera; lush, vibrant foliage; warm, inviting natural light; cinematic composition with depth and shallow depth of field; the natural scene must fill the entire frame, edge to edge. Absolutely NO text, NO words, NO letters, NO numbers, NO captions, NO titles, NO typography, NO logos, NO watermarks, NO icons, NO badges, NO labels, NO color side-panels or borders. This is NOT an infographic, NOT a poster, NOT a banner, NOT a flyer, NOT a graphic-design layout — only a clean, natural photograph.";
     }
 
     private function generateAuthorPrompt(): string

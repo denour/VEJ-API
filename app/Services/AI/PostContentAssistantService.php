@@ -163,7 +163,7 @@ class PostContentAssistantService
             $blockId = $context['block_id'] ?? null;
 
             $imagePrompt = match ($fieldType) {
-                'cover_image' => "Professional high-quality featured image for a gardening blog post titled '{$postTitle}'. Category: {$postCategory}. Photorealistic, vibrant colors, natural lighting, inspiring gardening scene.",
+                'cover_image' => "Professional high-quality featured PHOTOGRAPH for a gardening blog post titled '{$postTitle}'. Category: {$postCategory}. Photorealistic, vibrant colors, natural lighting, inspiring gardening scene that fills the whole frame. Absolutely no text, no words, no letters, no typography, no logos, no watermarks, no icons, no infographic or banner layout — a clean natural photo only.",
                 'block_image' => "Illustrative image for gardening blog content. Context: {$userPrompt}. Photorealistic, educational, clear and detailed.",
                 default => $userPrompt,
             };

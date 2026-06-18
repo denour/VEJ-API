@@ -717,15 +717,17 @@ PROMPT;
         }
 
         $prompt = <<<PROMPT
-Create a captivating hero image for a gardening blog post.
-Theme inspiration: {$excerpt}
+Create a captivating, photorealistic hero PHOTOGRAPH for a gardening blog.
+
+Visual theme (use ONLY as inspiration for the scene — never render this text, or any words, in the image): {$excerpt}
+
 Requirements:
-- Eye-catching, professional hero image (no text, no typography, no logos, no watermarks)
-- High-quality, photorealistic style with lush plants and vibrant greenery
-- Warm, inviting color palette with natural lighting
-- Cinematic composition with depth and visual interest
-- Works well as a banner/cover image
-- No text, no watermark
+- A real-looking photograph of plants, gardens or greenery, as if shot with a professional camera
+- Lush, vibrant foliage; warm, inviting natural light; cinematic composition with depth and shallow depth of field
+- The natural scene must fill the entire frame, edge to edge
+- Absolutely NO text, NO words, NO letters, NO numbers, NO captions, NO titles, NO typography
+- NO logos, NO watermarks, NO icons, NO badges, NO labels, NO color side-panels or borders
+- This is NOT an infographic, NOT a poster, NOT a banner, NOT a flyer, NOT a graphic-design layout — only a clean, natural photograph
 PROMPT;
 
         try {

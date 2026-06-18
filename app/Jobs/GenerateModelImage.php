@@ -147,7 +147,7 @@ class GenerateModelImage implements ShouldQueue
     {
         $name = $this->model->name;
 
-        return "Professional portrait style image for author {$name}, gardening and plant expert theme, modern and friendly.";
+        return "Ultra-realistic professional photographic portrait headshot of a real human gardening and plant expert named {$name} (use the name ONLY to infer a fitting, natural appearance — NEVER write the name, or any text, in the image). Shot on a DSLR with an 85mm lens, true-to-life skin texture and fine detail, natural soft studio lighting, shallow depth of field, neutral softly blurred background, candid friendly expression. It must look like an authentic photograph of a real person — NOT a 3D render, NOT CGI, NOT an illustration, NOT a painting, NOT a poster, NOT stylized. Absolutely NO text, NO words, NO letters, NO name captions, NO titles, NO logos, NO watermarks, NO borders or graphic overlays.";
     }
 
     private function getModelName(): string

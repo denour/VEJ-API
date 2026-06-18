@@ -104,9 +104,10 @@ PROMPT;
     private function generateAvatar(Author $author): void
     {
         $prompt = <<<PROMPT
-Professional studio headshot of a gardening expert named {$author->name}.
-Style: clean portrait, soft diffused lighting, subtle smile, shallow depth of field, neutral background.
-No text, no watermark, high detail, natural look.
+Ultra-realistic professional photographic studio headshot of a real human gardening expert named {$author->name} (use the name ONLY to infer a fitting, natural appearance — never write the name or any text in the image).
+Shot on a DSLR with an 85mm lens, true-to-life skin texture and fine detail, soft diffused lighting, subtle smile, shallow depth of field, neutral softly blurred background.
+It must look like an authentic photograph of a real person — NOT a 3D render, NOT CGI, NOT an illustration, NOT a painting, NOT stylized.
+Absolutely no text, no words, no letters, no name captions, no titles, no logos, no watermarks, no borders.
 PROMPT;
 
         try {

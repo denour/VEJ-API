@@ -2,8 +2,10 @@
 
 namespace App\Providers;
 
+use App\Models\Author;
 use App\Models\Post;
 use App\Models\Species;
+use App\Observers\AuthorObserver;
 use App\Observers\PostObserver;
 use App\Observers\SpeciesObserver;
 use Illuminate\Support\ServiceProvider;
@@ -25,5 +27,6 @@ class AppServiceProvider extends ServiceProvider
     {
         Species::observe(SpeciesObserver::class);
         Post::observe(PostObserver::class);
+        Author::observe(AuthorObserver::class);
     }
 }

@@ -3,14 +3,17 @@
 namespace App\Services\Social;
 
 use App\Contracts\AI\ImageGeneratorInterface;
+use App\Contracts\AI\TextGeneratorInterface;
 use App\Models\Post;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class SocialMediaPublisher
 {
     public function __construct(
         private readonly ImageGeneratorInterface $imageGenerator,
+        private readonly TextGeneratorInterface $textGenerator,
     ) {}
 
     /**
@@ -22,8 +25,10 @@ class SocialMediaPublisher
     {
         $results = ['facebook' => null, 'instagram' => null];
 
+        $copy = $this->generateSocialCopy($post);
+
         try {
-            $socialImageUrl = $this->generateSocialImage($post);
+            $socialImageUrl = $this->generateSocialImage($post, $copy['social_hook']);
             $post->update(['social_image' => $socialImageUrl]);
         } catch (\Throwable $e) {
             Log::error('Failed to generate social image', [
@@ -41,14 +46,12 @@ class SocialMediaPublisher
             }
         }
 
-        $caption = $this->buildCaption($post);
-
         if (config('social.facebook.enabled')) {
-            $results['facebook'] = $this->publishToFacebook($post, $socialImageUrl, $caption);
+            $results['facebook'] = $this->publishToFacebook($post, $socialImageUrl, $this->buildFacebookCaption($post, $copy['fb_body']));
         }
 
         if (config('social.instagram.enabled')) {
-            $results['instagram'] = $this->publishToInstagram($post, $socialImageUrl, $caption);
+            $results['instagram'] = $this->publishToInstagram($post, $socialImageUrl, $this->buildInstagramCaption($post, $copy['ig_body']));
         }
 
         $post->update([
@@ -61,27 +64,85 @@ class SocialMediaPublisher
     }
 
     /**
-     * Generate a social-media-optimized image with title overlay.
+     * Generate platform-tailored social copy in a single AI call.
+     *
+     * @return array{social_hook: string, fb_body: string, ig_body: string}
      */
-    private function generateSocialImage(Post $post): string
+    private function generateSocialCopy(Post $post): array
     {
         $title = $post->title;
+        $excerpt = $post->excerpt ?? '';
+        $category = $post->category ?? 'Jardinería';
+
+        $prompt = <<<PROMPT
+Eres el community manager del blog mexicano de jardinería "Vida en el Jardín".
+A partir de este artículo, crea copy para redes sociales que invite a leerlo.
+
+TÍTULO DEL ARTÍCULO: {$title}
+CATEGORÍA: {$category}
+RESUMEN: {$excerpt}
+
+Devuelve EXCLUSIVAMENTE JSON válido, sin texto adicional, con esta estructura:
+{
+  "social_hook": "Gancho cortísimo de 5 a 8 palabras para sobreponer en la imagen. Emocional o que despierte curiosidad, NADA de tono SEO. Sin hashtags, sin emoji, sin comillas.",
+  "fb_body": "Texto para Facebook: 2-3 frases cálidas e informativas que enganchen al lector. En español mexicano. Sin enlaces y sin hashtags (se agregan aparte). Máximo 1 emoji.",
+  "ig_body": "Texto para Instagram: cercano y visual, 1-2 frases con 2-4 emoji bien colocados. En español mexicano. Sin enlaces y sin hashtags (se agregan aparte)."
+}
+PROMPT;
+
+        $raw = $this->textGenerator->generate($prompt, [
+            'system' => 'Eres un community manager experto en jardinería. Devuelve solo JSON válido.',
+            'max_tokens' => 400,
+        ]);
+
+        $data = $this->parseJsonObject($raw);
+
+        return [
+            'social_hook' => trim($data['social_hook'] ?? Str::limit($post->title, 50, '')),
+            'fb_body' => trim($data['fb_body'] ?? ($excerpt !== '' ? $excerpt : $title)),
+            'ig_body' => trim($data['ig_body'] ?? ($excerpt !== '' ? $excerpt : $title)),
+        ];
+    }
+
+    /**
+     * Decode a JSON object from a raw AI response, tolerating markdown fences.
+     *
+     * @return array<string, mixed>
+     */
+    private function parseJsonObject(string $raw): array
+    {
+        $candidate = trim($raw);
+
+        if (preg_match('/```(?:json)?\s*(\{.*\})\s*```/is', $candidate, $matches)) {
+            $candidate = $matches[1];
+        }
+
+        $data = json_decode($candidate, true);
+
+        return is_array($data) ? $data : [];
+    }
+
+    /**
+     * Generate a social-media-optimized image with a short hook overlay.
+     */
+    private function generateSocialImage(Post $post, string $hook): string
+    {
         $category = $post->category ?? 'Jardinería';
 
         $prompt = <<<PROMPT
 Create a stunning social media image for a gardening blog post.
 
-The image must include the following title text elegantly overlaid: "{$title}"
+The image must include this SHORT hook text elegantly overlaid: "{$hook}"
 
 Style requirements:
 - Square format (1:1 aspect ratio) for Instagram and Facebook
 - Vibrant plant photography as background with cinematic lighting
-- Title text should be large, readable, and beautifully integrated
+- The hook text should be large, readable, and beautifully integrated
 - Use a semi-transparent dark overlay behind the text for readability
 - Modern editorial aesthetic, clean typography
 - Category badge: "{$category}"
 - Brand: "Vida en el Jardín" as small watermark in corner
-- No other text besides the title, category, and brand
+- No other text besides the hook, category, and brand
 PROMPT;
 
         return $this->imageGenerator->generate($prompt, [
@@ -92,22 +153,42 @@ PROMPT;
     }
 
     /**
-     * Build a caption for social media posts.
+     * Build a Facebook caption: creative body + clickable link + few hashtags.
      */
-    private function buildCaption(Post $post): string
+    private function buildFacebookCaption(Post $post, string $body): string
     {
         $blogUrl = config('social.blog_url', 'https://vidaeneljardin.com');
         $postUrl = "{$blogUrl}/blog/{$post->slug}";
+        $hashtags = $this->hashtags($post, 2, ['#VidaEnElJardin']);
 
-        $hashtags = collect($post->tags ?? [])
-            ->map(fn (string $tag) => '#'.str_replace(' ', '', $tag))
+        return "{$body}\n\nLee el artículo completo:\n{$postUrl}\n\n{$hashtags}";
+    }
+
+    /**
+     * Build an Instagram caption: creative body + "link in bio" + many hashtags.
+     * Instagram captions do not render clickable links, so we point to the bio.
+     */
+    private function buildInstagramCaption(Post $post, string $body): string
+    {
+        $hashtags = $this->hashtags($post, 12, ['#VidaEnElJardin', '#Plantas', '#Jardineria']);
+
+        return "{$body}\n\n📍 Encuentra el link en nuestra bio para leer el artículo completo.\n\n{$hashtags}";
+    }
+
+    /**
+     * Build a hashtag string from the post tags plus brand hashtags.
+     *
+     * @param  list<string>  $brand
+     */
+    private function hashtags(Post $post, int $maxPostTags, array $brand): string
+    {
+        return collect($post->tags ?? [])
+            ->filter()
+            ->take($maxPostTags)
+            ->map(fn (string $tag) => '#'.str_replace(' ', '', trim($tag)))
+            ->merge($brand)
+            ->unique()
             ->implode(' ');
-
-        $caption = "{$post->excerpt}\n\n";
-        $caption .= "Lee el articulo completo:\n{$postUrl}\n\n";
-        $caption .= "{$hashtags} #VidaEnElJardin #Plantas #Jardineria";
-
-        return $caption;
     }
 
     /**

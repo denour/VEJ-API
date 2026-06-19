@@ -101,7 +101,7 @@ class BananaWebhookTest extends TestCase
             ->assertJsonStructure(['message', 'url']);
 
         $author->refresh();
-        $this->assertNotNull($author->image);
+        $this->assertNotNull($author->avatar_url);
 
         $files = Storage::disk('s3')->allFiles('authors');
         $this->assertNotEmpty($files);

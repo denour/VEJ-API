@@ -42,10 +42,7 @@ class AIServiceProvider extends ServiceProvider
                     apiKey: $config['api_key'],
                     model: $config['model'],
                 ),
-                'mock' => new MockBananaImageGenerator(
-                    mockTaskId: $config['task_id'],
-                    mockImageUrl: $config['image_url'],
-                ),
+                'mock' => new MockBananaImageGenerator,
                 default => throw new \InvalidArgumentException("Unknown image provider: {$provider}"),
             };
         });

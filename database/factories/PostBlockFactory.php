@@ -3,7 +3,6 @@
 namespace Database\Factories;
 
 use App\Models\Post;
-use App\Models\PostBlock;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -57,7 +56,7 @@ class PostBlockFactory extends Factory
             'title' => null,
             'content' => null,
             'data' => [
-                'url' => fake()->imageUrl(800, 600),
+                'url' => 'https://picsum.photos/seed/'.fake()->uuid().'/800/600',
                 'alt' => fake()->sentence(),
                 'caption' => fake()->optional()->sentence(),
             ],
@@ -112,7 +111,7 @@ class PostBlockFactory extends Factory
             'content' => "function example() {\n    return 'Hello World';\n}",
             'data' => [
                 'language' => fake()->randomElement(['javascript', 'php', 'python', 'html', 'css']),
-                'filename' => fake()->optional()->word() . '.' . fake()->randomElement(['js', 'php', 'py', 'html', 'css']),
+                'filename' => fake()->optional()->word().'.'.fake()->randomElement(['js', 'php', 'py', 'html', 'css']),
             ],
         ]);
     }
@@ -124,7 +123,7 @@ class PostBlockFactory extends Factory
             'title' => fake()->optional()->sentence(),
             'content' => null,
             'data' => [
-                'url' => 'https://www.youtube.com/watch?v=' . fake()->regexify('[A-Za-z0-9_-]{11}'),
+                'url' => 'https://www.youtube.com/watch?v='.fake()->regexify('[A-Za-z0-9_-]{11}'),
                 'provider' => 'youtube',
                 'thumbnail' => fake()->imageUrl(800, 450),
                 'caption' => fake()->optional()->sentence(),

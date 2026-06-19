@@ -52,7 +52,7 @@ class AuthorResource extends Resource
                                                 ->required()
                                                 ->unique(ignoreRecord: true)
                                                 ->live(onBlur: true)
-                                                ->afterStateUpdated(fn ($state, callable $set) => $set('slug', str($state)->slug()))
+                                                ->afterStateUpdated(fn ($state, callable $set) => $set('slug', (string) str($state)->slug()))
                                                 ->suffixAction(
                                                     static::createAiAssistAction('name')
                                                 ),
@@ -62,7 +62,7 @@ class AuthorResource extends Resource
                                                 ->required()
                                                 ->unique(ignoreRecord: true)
                                                 ->live(onBlur: true)
-                                                ->afterStateUpdated(fn ($state, callable $set) => $set('slug', str($state)->slug())),
+                                                ->afterStateUpdated(fn ($state, callable $set) => $set('slug', (string) str($state)->slug())),
 
                                             Forms\Components\Toggle::make('is_active')
                                                 ->label('Activo')
@@ -72,6 +72,7 @@ class AuthorResource extends Resource
                                                 ->label('Imagen del Autor')
                                                 ->url()
                                                 ->placeholder('https://...')
+                                                ->hiddenOn('create')
                                                 ->suffixAction(
                                                     static::createAiAssistAction('avatar_url')
                                                 ),

@@ -7,12 +7,22 @@ use App\Models\Author;
 use App\Models\Post;
 use App\Services\AI\PostGeneratorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use ReflectionMethod;
 use Tests\TestCase;
 
 class PostCoverImagePromptTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Prevent the PostObserver from auto-generating (and persisting) a cover
+        // image on create, which would make generateCoverImage() early-return.
+        Queue::fake();
+    }
 
     private function captureCoverPrompt(Post $post): string
     {

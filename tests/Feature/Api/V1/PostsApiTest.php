@@ -24,10 +24,10 @@ class PostsApiTest extends TestCase
 
     public function test_index_can_filter_by_category_and_search(): void
     {
-        Post::factory()->create(['title' => 'Guía de riego', 'category' => 'Cuidado']);
-        Post::factory()->create(['title' => 'Otra cosa', 'category' => 'Otro']);
+        Post::factory()->create(['title' => 'Guía de riego', 'category' => 'Cuidado', 'status' => 'published']);
+        Post::factory()->create(['title' => 'Otra cosa', 'category' => 'Otro', 'status' => 'published']);
 
-        $this->getJson('/api/v1/posts?category=Cuidado&search=riego')
+        $this->getJson('/api/v1/posts?category=Cuidado&q=riego')
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonFragment(['category' => 'Cuidado', 'title' => 'Guía de riego']);
@@ -37,7 +37,7 @@ class PostsApiTest extends TestCase
     {
         $post = Post::factory()->create();
 
-        $this->getJson("/api/v1/posts/{$post->getKey()}")
+        $this->getJson("/api/v1/posts/{$post->slug}")
             ->assertOk()
             ->assertJsonFragment(['id' => (string) $post->getKey(), 'title' => $post->title]);
     }

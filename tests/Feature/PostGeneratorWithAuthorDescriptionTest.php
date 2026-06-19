@@ -6,6 +6,7 @@ use App\Contracts\AI\ImageGeneratorInterface;
 use App\Contracts\AI\TextGeneratorInterface;
 use App\Models\Author;
 use App\Services\AI\AuthorDescriptionGeneratorService;
+use App\Services\AI\PersonaPromptBuilder;
 use App\Services\AI\PostGeneratorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -47,7 +48,7 @@ class PostGeneratorWithAuthorDescriptionTest extends TestCase
             ->willReturn('https://example.com/image.jpg');
 
         $authorDescriptionService = new AuthorDescriptionGeneratorService($mockTextGenerator);
-        $service = new PostGeneratorService($mockTextGenerator, $mockImageGenerator, $authorDescriptionService);
+        $service = new PostGeneratorService($mockTextGenerator, $mockImageGenerator, $authorDescriptionService, new PersonaPromptBuilder);
 
         $post = $service->generatePost($author);
 
@@ -90,7 +91,7 @@ class PostGeneratorWithAuthorDescriptionTest extends TestCase
             ->willReturn('https://example.com/balcony.jpg');
 
         $authorDescriptionService = new AuthorDescriptionGeneratorService($mockTextGenerator);
-        $service = new PostGeneratorService($mockTextGenerator, $mockImageGenerator, $authorDescriptionService);
+        $service = new PostGeneratorService($mockTextGenerator, $mockImageGenerator, $authorDescriptionService, new PersonaPromptBuilder);
 
         $post = $service->generatePost($author, 'Jardinería en balcones');
 
@@ -128,7 +129,7 @@ class PostGeneratorWithAuthorDescriptionTest extends TestCase
             ->willReturn('https://example.com/basics.jpg');
 
         $authorDescriptionService = new AuthorDescriptionGeneratorService($mockTextGenerator);
-        $service = new PostGeneratorService($mockTextGenerator, $mockImageGenerator, $authorDescriptionService);
+        $service = new PostGeneratorService($mockTextGenerator, $mockImageGenerator, $authorDescriptionService, new PersonaPromptBuilder);
 
         $post = $service->generatePost($author);
 
@@ -171,7 +172,7 @@ class PostGeneratorWithAuthorDescriptionTest extends TestCase
             ->willReturn('https://example.com/compost.jpg');
 
         $authorDescriptionService = new AuthorDescriptionGeneratorService($mockTextGenerator);
-        $service = new PostGeneratorService($mockTextGenerator, $mockImageGenerator, $authorDescriptionService);
+        $service = new PostGeneratorService($mockTextGenerator, $mockImageGenerator, $authorDescriptionService, new PersonaPromptBuilder);
 
         $post = $service->generatePost($author, null, ['length' => 'long']);
 

@@ -2,13 +2,32 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Author extends Model
 {
     use HasFactory;
+    use HasUlids;
+
+    protected static function booted(): void
+    {
+        static::creating(function (Author $author): void {
+            if (blank($author->slug) && filled($author->name)) {
+                $base = Str::slug($author->name);
+                $slug = $base;
+                $i = 2;
+                while (static::query()->where('slug', $slug)->exists()) {
+                    $slug = "{$base}-{$i}";
+                    $i++;
+                }
+                $author->slug = $slug;
+            }
+        });
+    }
 
     protected $fillable = [
         'name',

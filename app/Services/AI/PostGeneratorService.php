@@ -321,7 +321,7 @@ DISEÑA LA ESTRUCTURA TÚ MISMO — que no parezca plantilla. Restricciones:
 - Mínimo 5 párrafos en total. Cada description debe ser específica y no traslapar con otro bloque.
 
 TÍTULO Y EXCERPT:
-- Título: 40-65 caracteres, español mexicano. Evita el molde "Tema: subtítulo" con dos puntos (ya está sobreusado en el blog); usa pregunta directa, afirmación, cómo/por qué o un dato. Prohibido "guía práctica", "tips esenciales", "todo lo que necesitas saber".
+- Título: 40-65 caracteres, español mexicano. PROHIBIDO usar dos puntos (:) en el título — nada de "Tema: subtítulo". Usa pregunta directa, afirmación, cómo/por qué o un dato. Prohibido "guía práctica", "tips esenciales", "todo lo que necesitas saber".
 - Excerpt: máximo 160 caracteres, 1-2 oraciones concretas. Prohibido empezar con "Descubre", "Aprende" o "Conoce".
 
 Responde ÚNICAMENTE en JSON válido:
@@ -479,7 +479,8 @@ REGLAS:
 - Entre 80 y 160 palabras, texto plano sin markdown.
 - Continúa el hilo: NO vuelvas a presentar el tema, NO repitas consejos, ejemplos ni frases que ya aparecen en el texto de arriba.
 - No arranques igual que ningún párrafo anterior (si otro ya abre con pregunta, con "Si..." o con "En...", entra distinto).
-- Aporta al menos un dato concreto nuevo: especie, cantidad, frecuencia, costo o error común.
+- Aporta al menos un dato concreto nuevo, de tipo DISTINTO a los ya usados arriba: especie, cantidad, frecuencia o error común. Menciona precios máximo UNA vez en todo el artículo — si ya hay un precio arriba, no des otro.
+- Prohibido el molde "no es solo X, es Y" y sus variantes.
 - Responde ÚNICAMENTE con el texto del párrafo.
 PROMPT;
 

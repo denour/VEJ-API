@@ -317,7 +317,7 @@ DISEÑA LA ESTRUCTURA TÚ MISMO — que no parezca plantilla. Restricciones:
 - Exactamente 1 bloque de imagen, colocado donde mejor apoye al contenido (varía su posición, no siempre a la mitad).
 - Incluye una lista SOLO si el tema realmente la pide (pasos, calendario, dosis). Si el tema es de diseño, identificación o reflexión, omítela.
 - La cita es OPCIONAL: inclúyela solo si un refrán popular real o una observación concreta del autor le suma algo. Nunca una frase motivacional abstracta.
-- El cierre puede ser: un error común y cómo evitarlo, una anécdota breve del autor, o qué hacer este fin de semana. NO "reflexión final" genérica.
+- El cierre puede ser: un error común y cómo evitarlo, una anécdota breve del autor, un experimento propuesto al lector, o simplemente el consejo más importante al final. NO "reflexión final" genérica, y NO uses el mismo tipo de cierre que sugieren los títulos recientes — varía.
 - Mínimo 5 párrafos en total. Cada description debe ser específica y no traslapar con otro bloque.
 
 TÍTULO Y EXCERPT:
@@ -477,10 +477,11 @@ ESCRIBE EL SIGUIENTE PÁRRAFO. Tema de este párrafo: {$description}
 
 REGLAS:
 - Entre 80 y 160 palabras, texto plano sin markdown.
-- Continúa el hilo: NO vuelvas a presentar el tema, NO repitas consejos, ejemplos ni frases que ya aparecen en el texto de arriba.
+- Continúa el hilo: NO vuelvas a presentar el tema, NO repitas consejos ni ejemplos ya dados, y NUNCA repitas textualmente una oración que ya aparece en el texto de arriba.
 - No arranques igual que ningún párrafo anterior (si otro ya abre con pregunta, con "Si..." o con "En...", entra distinto).
 - Aporta al menos un dato concreto nuevo, de tipo DISTINTO a los ya usados arriba: especie, cantidad, frecuencia o error común. Menciona precios máximo UNA vez en todo el artículo — si ya hay un precio arriba, no des otro.
 - Prohibido el molde "no es solo X, es Y" y sus variantes.
+- Estas instrucciones son invisibles para el lector: jamás menciones frases como "dato concreto", "como regla" o cualquier eco de estas reglas dentro del párrafo.
 - Responde ÚNICAMENTE con el texto del párrafo.
 PROMPT;
 

@@ -152,7 +152,7 @@ class PostGeneratorService
         $authorAttributes['voice_bible'] = $author->voice_bible;
         $authorAttributes['author_name'] = $author->name;
         $structure = $this->generatePostStructure($author, $authorAttributes, $topic, $options);
-        $contentBlocks = $this->generateContentBlocks($structure['blocks'], $authorAttributes);
+        $contentBlocks = $this->generateContentBlocks($structure, $authorAttributes);
         $tableOfContents = $this->generateTableOfContents($contentBlocks);
 
         return [
@@ -291,13 +291,18 @@ class PostGeneratorService
         $editorialFocus = is_array($authorAttributes['editorial_focus']) ? implode(', ', $authorAttributes['editorial_focus']) : $authorAttributes['editorial_focus'];
 
         $lengthInstruction = match ($options['length'] ?? 'medium') {
-            'short' => 'El post debe ser corto (4-5 bloques)',
-            'long' => 'El post debe ser largo (8-10 bloques)',
-            default => 'El post debe ser de longitud media (5-8 bloques)',
+            'short' => 'El post debe ser corto (4-6 bloques)',
+            'long' => 'El post debe ser largo (9-12 bloques)',
+            default => 'El post debe ser de longitud media (6-9 bloques)',
         };
 
+        $recentTitles = $this->recentPostTitles();
+        $recentTitlesSection = empty($recentTitles)
+            ? ''
+            : "\nTÍTULOS RECIENTES DEL BLOG — prohibido repetir sus temas y prohibido imitar sus patrones de redacción:\n- ".implode("\n- ", $recentTitles)."\n";
+
         $prompt = <<<PROMPT
-Genera la estructura editorial para un artículo del blog "Vida en el Jardín" (blog mexicano de jardinería).
+Genera la estructura editorial para un artículo del blog "Vida en el Jardín" (blog mexicano de jardinería urbana).
 
 AUTOR: {$author->name}
 - Tono: {$authorAttributes['tone']}
@@ -305,38 +310,28 @@ AUTOR: {$author->name}
 - Estilo: {$authorAttributes['writing_style']}
 - Especialidades: {$themesString}
 {$topicInstruction}
+{$lengthInstruction}
+{$recentTitlesSection}
+DISEÑA LA ESTRUCTURA TÚ MISMO — que no parezca plantilla. Restricciones:
+- Entre 2 y 4 secciones con heading H2. Los headings no parafrasean el título ni se repiten entre sí; nada de headings genéricos tipo "Cierre y reflexión".
+- Exactamente 1 bloque de imagen, colocado donde mejor apoye al contenido (varía su posición, no siempre a la mitad).
+- Incluye una lista SOLO si el tema realmente la pide (pasos, calendario, dosis). Si el tema es de diseño, identificación o reflexión, omítela.
+- La cita es OPCIONAL: inclúyela solo si un refrán popular real o una observación concreta del autor le suma algo. Nunca una frase motivacional abstracta.
+- El cierre puede ser: un error común y cómo evitarlo, una anécdota breve del autor, o qué hacer este fin de semana. NO "reflexión final" genérica.
+- Mínimo 5 párrafos en total. Cada description debe ser específica y no traslapar con otro bloque.
 
-ESTRUCTURA OBLIGATORIA — el artículo debe tener EXACTAMENTE esta forma:
-
-1. Un párrafo introductorio (hook que atrape al lector)
-2. Sección 1: heading H2 + 1-2 párrafos informativos
-3. Una imagen contextual
-4. Sección 2: heading H2 + 1-2 párrafos con tips prácticos
-5. Una lista de pasos o consejos concretos
-6. Sección 3: heading H2 + 1 párrafo de cierre/reflexión
-7. Una cita inspiradora relacionada con el tema
-
-TOTAL: mínimo 3 headings H2, mínimo 6 párrafos, 1 imagen, 1 lista, 1 quote.
+TÍTULO Y EXCERPT:
+- Título: 40-65 caracteres, español mexicano. Evita el molde "Tema: subtítulo" con dos puntos (ya está sobreusado en el blog); usa pregunta directa, afirmación, cómo/por qué o un dato. Prohibido "guía práctica", "tips esenciales", "todo lo que necesitas saber".
+- Excerpt: máximo 160 caracteres, 1-2 oraciones concretas. Prohibido empezar con "Descubre", "Aprende" o "Conoce".
 
 Responde ÚNICAMENTE en JSON válido:
 {
-    "title": "Título atractivo y SEO (40-65 caracteres)",
-    "excerpt": "Descripción que enganche (2-3 oraciones, máximo 160 caracteres)",
+    "title": "Título del artículo",
+    "excerpt": "Resumen concreto",
     "category": "Una de: Cuidado, Identificación, Decoración, Herramientas, Consejos",
     "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
     "blocks": [
-        {"type": "paragraph", "description": "Intro: qué problema resuelve y por qué importa"},
-        {"type": "heading", "description": "Título de sección 1"},
-        {"type": "paragraph", "description": "Contenido detallado de sección 1"},
-        {"type": "paragraph", "description": "Más detalle o ejemplo práctico de sección 1"},
-        {"type": "image", "description": "Descripción visual de lo que debe mostrar la imagen"},
-        {"type": "heading", "description": "Título de sección 2"},
-        {"type": "paragraph", "description": "Tips prácticos de sección 2"},
-        {"type": "paragraph", "description": "Ejemplo o anécdota de sección 2"},
-        {"type": "list", "description": "Lista de 5-7 pasos o consejos concretos"},
-        {"type": "heading", "description": "Título de sección 3 - cierre"},
-        {"type": "paragraph", "description": "Reflexión final o call-to-action"},
-        {"type": "quote", "description": "Cita inspiradora sobre el tema"}
+        {"type": "paragraph|heading|image|list|quote", "description": "qué cubre este bloque, específico"}
     ]
 }
 PROMPT;
@@ -354,48 +349,144 @@ PROMPT;
     }
 
     /**
-     * Generate content for each block.
+     * Generate content for each block, threading what's already written into
+     * every call so blocks don't re-introduce the topic or repeat advice.
      */
-    private function generateContentBlocks(array $blocks, array $authorAttributes): array
+    private function generateContentBlocks(array $structure, array $authorAttributes): array
     {
+        $blocks = $structure['blocks'] ?? [];
+        $title = $structure['title'] ?? '';
+        $systemPrompt = $this->buildAuthorSystemPrompt($authorAttributes);
+
+        $outline = implode("\n", array_map(
+            fn (array $b): string => "- [{$b['type']}] {$b['description']}",
+            $blocks
+        ));
+
         $contentBlocks = [];
+        $writtenSoFar = [];
+        $usedHeadings = [];
 
         foreach ($blocks as $index => $block) {
-            $contentBlocks[] = match ($block['type']) {
-                'heading' => $this->generateHeading($block['description']),
+            $context = $this->buildRunningContext($title, $outline, $writtenSoFar);
+
+            $contentBlock = match ($block['type']) {
+                'heading' => $this->generateHeading($block['description'], $title, $usedHeadings, $systemPrompt),
                 'image' => $this->generateImageBlock($block['description']),
-                'list' => $this->generateList($block['description'], $authorAttributes),
-                'quote' => $this->generateQuote($block['description'], $authorAttributes),
-                default => $this->generateParagraph($block['description'], $authorAttributes),
+                'list' => $this->generateList($block['description'], $context, $systemPrompt),
+                'quote' => $this->generateQuote($block['description'], $title, $authorAttributes, $systemPrompt),
+                default => $this->generateParagraph($block['description'], $context, $systemPrompt),
             };
+
+            $contentBlocks[] = $contentBlock;
+
+            switch ($contentBlock['type']) {
+                case 'paragraph':
+                    $writtenSoFar[] = $contentBlock['data']['text'];
+                    break;
+                case 'heading':
+                    $writtenSoFar[] = '## '.$contentBlock['data']['text'];
+                    $usedHeadings[] = $contentBlock['data']['text'];
+                    break;
+                case 'list':
+                    $writtenSoFar[] = "Lista:\n- ".implode("\n- ", $contentBlock['data']['items']);
+                    break;
+                case 'quote':
+                    $writtenSoFar[] = 'Cita: "'.$contentBlock['data']['text'].'"';
+                    break;
+            }
         }
 
         return $contentBlocks;
     }
 
-    private function generateParagraph(string $description, array $authorAttributes): array
+    /**
+     * Build the shared context injected into each block-generation call.
+     */
+    private function buildRunningContext(string $title, string $outline, array $writtenSoFar): string
+    {
+        $written = empty($writtenSoFar)
+            ? '(nada todavía — este es el primer bloque del artículo)'
+            : implode("\n\n", $writtenSoFar);
+
+        return <<<CONTEXT
+Estás escribiendo el artículo "{$title}" para el blog "Vida en el Jardín".
+
+ESQUEMA COMPLETO DEL ARTÍCULO:
+{$outline}
+
+TEXTO YA ESCRITO HASTA AHORA:
+{$written}
+CONTEXT;
+    }
+
+    /**
+     * System prompt with the author's persona plus hard anti-slop style rules.
+     * Falls back to the structured persona attributes when voice_bible is empty.
+     */
+    private function buildAuthorSystemPrompt(array $authorAttributes): string
     {
         $authorName = $authorAttributes['author_name'] ?? 'el autor';
-        $prompt = <<<PROMPT
-Escribe un párrafo para el blog "Vida en el Jardín".
 
-INSTRUCCIÓN: {$description}
+        $system = <<<SYSTEM
+Eres {$authorName}, columnista de "Vida en el Jardín", un blog mexicano de jardinería urbana. Escribes SIEMPRE en primera persona, en español mexicano natural.
 
-REGLAS:
-- Entre 80-150 palabras
-- En español mexicano
-- Sin formato markdown, solo texto plano
-- Informativo, práctico, con personalidad
-- Responde ÚNICAMENTE con el texto del párrafo
-PROMPT;
+TU VOZ:
+- Tono: {$authorAttributes['tone']}
+- Rasgos: {$authorAttributes['personality']}
+- Estilo: {$authorAttributes['writing_style']}
 
-        $options = ['max_tokens' => 300];
+REGLAS DE ESTILO (obligatorias, por encima de todo lo demás):
+- Suena a persona, no a folleto: prohibido "descubre", "sumérgete", "transforma tu espacio", "tu aliado perfecto", "manos a la obra".
+- Prohibida la fórmula "no es solo X, es Y", los cierres motivacionales y los llamados a compartir o etiquetar.
+- Evita tríadas de sustantivos o adjetivos ("cultivar, alimentar y soñar"). Máximo UNA imagen sensorial o metáfora por artículo; el resto, concreto.
+- Lo concreto le gana a lo poético: especies, cantidades, frecuencias, costos aproximados, errores que tú ya cometiste.
+- Varía la longitud de tus frases; incluye alguna corta. Puedes empezar una frase con "Y" o "Pero".
+- No expliques lo obvio ni repitas una idea con otras palabras.
+SYSTEM;
 
         if (! empty($authorAttributes['voice_bible'])) {
-            $options['system'] = "Eres {$authorName}, escritor del blog 'Vida en el Jardín'. Escribe SIEMPRE en primera persona siguiendo esta guía de voz:\n\n{$authorAttributes['voice_bible']}";
+            $system .= "\n\nGUÍA DE VOZ DEL AUTOR:\n{$authorAttributes['voice_bible']}";
         }
 
-        $text = $this->textGenerator->generate($prompt, $options);
+        return $system;
+    }
+
+    /**
+     * Titles of the most recent published posts, to steer new structures away
+     * from repeating topics and title patterns.
+     *
+     * @return list<string>
+     */
+    private function recentPostTitles(int $limit = 12): array
+    {
+        return Post::query()
+            ->whereNotNull('published_at')
+            ->orderByDesc('published_at')
+            ->limit($limit)
+            ->pluck('title')
+            ->all();
+    }
+
+    private function generateParagraph(string $description, string $context, string $systemPrompt): array
+    {
+        $prompt = <<<PROMPT
+{$context}
+
+ESCRIBE EL SIGUIENTE PÁRRAFO. Tema de este párrafo: {$description}
+
+REGLAS:
+- Entre 80 y 160 palabras, texto plano sin markdown.
+- Continúa el hilo: NO vuelvas a presentar el tema, NO repitas consejos, ejemplos ni frases que ya aparecen en el texto de arriba.
+- No arranques igual que ningún párrafo anterior (si otro ya abre con pregunta, con "Si..." o con "En...", entra distinto).
+- Aporta al menos un dato concreto nuevo: especie, cantidad, frecuencia, costo o error común.
+- Responde ÚNICAMENTE con el texto del párrafo.
+PROMPT;
+
+        $text = $this->textGenerator->generate($prompt, [
+            'max_tokens' => 400,
+            'system' => $systemPrompt,
+        ]);
 
         return [
             'type' => 'paragraph',
@@ -403,24 +494,28 @@ PROMPT;
         ];
     }
 
-    private function generateHeading(string $description): array
+    private function generateHeading(string $description, string $title, array $usedHeadings, string $systemPrompt): array
     {
+        $usedSection = empty($usedHeadings)
+            ? ''
+            : "\nSubtítulos ya usados en este artículo (no los repitas ni los parafrasees):\n- ".implode("\n- ", $usedHeadings)."\n";
+
         $prompt = <<<PROMPT
-Genera un subtítulo de sección (H2) para un artículo de jardinería.
+Genera un subtítulo de sección (H2) para el artículo "{$title}".
 
-Descripción de la sección: {$description}
-
+Sección: {$description}
+{$usedSection}
 REGLAS:
-- Máximo 8 palabras en español
-- Debe ser descriptivo y atractivo
-- Sin puntuación final ni formato
-- Optimizado para SEO con keywords naturales
+- Máximo 8 palabras en español, sin puntuación final ni formato.
+- Específico del contenido de la sección; prohibidos los genéricos ("Cierre y reflexión", "Consejos prácticos").
+- No parafrasees el título del artículo ni repitas sus mismas palabras clave.
 
 Responde SOLO con el texto del subtítulo.
 PROMPT;
 
         $text = $this->textGenerator->generate($prompt, [
             'max_tokens' => 50,
+            'system' => $systemPrompt,
         ]);
 
         return [
@@ -474,22 +569,18 @@ PROMPT;
         ]);
     }
 
-    private function generateList(string $description, array $authorAttributes): array
+    private function generateList(string $description, string $context, string $systemPrompt): array
     {
         $prompt = <<<PROMPT
-Genera una lista para un blog de jardinería basado en esta descripción:
-{$description}
+{$context}
 
-IMPORTANTE - Escribe con estas características del autor:
-- Tono: {$authorAttributes['tone']}
-- Personalidad: {$authorAttributes['personality']}
+AHORA GENERA LA LISTA de este bloque: {$description}
 
-La lista debe tener entre 4-7 items.
-Cada item debe ser:
-- Conciso (1-2 oraciones)
-- Práctico y útil
-- En español
-- Debe reflejar el tono y personalidad del autor
+REGLAS:
+- Entre 4 y 7 items, cada uno de 1-2 oraciones.
+- Cada item aporta algo NUEVO: nada de repetir consejos que ya aparecen en el texto de arriba.
+- Concreto y accionable: cantidades, frecuencias, especies, herramientas. Nada de items de relleno ("disfruta el proceso").
+- Varía cómo empieza cada item (no todos con verbo en imperativo).
 
 Responde en formato JSON:
 {
@@ -499,6 +590,7 @@ PROMPT;
 
         $response = $this->textGenerator->generate($prompt, [
             'max_tokens' => 400,
+            'system' => $systemPrompt,
         ]);
 
         $response = preg_replace('/^```json\s*/m', '', $response);
@@ -515,20 +607,30 @@ PROMPT;
         ];
     }
 
-    private function generateQuote(string $description, array $authorAttributes = []): array
+    private function generateQuote(string $description, string $title, array $authorAttributes = [], string $systemPrompt = ''): array
     {
-        $prompt = <<<PROMPT
-Genera una cita inspiradora sobre jardinería basada en: {$description}
+        $authorName = $authorAttributes['author_name'] ?? 'el autor';
 
-- Inspiradora y memorable, entre 15-30 palabras, en español
-- Puede ser de un autor real, proverbio popular, o del propio autor del blog
+        $prompt = <<<PROMPT
+Para el artículo "{$title}" genera UNA cita ({$description}). Elige la opción que mejor le quede al tema:
+
+a) Un refrán o dicho popular REAL del español relacionado con el campo, la siembra o la paciencia (author: "Refrán popular").
+b) Una cita REAL de una persona real, solo si estás seguro de que existe (author: su nombre).
+c) Una observación breve, concreta y en primera persona del propio autor, sacada de su experiencia (author: "{$authorName}").
+
+PROHIBIDO: frases motivacionales abstractas ("la ciudad florece cuando...", "cada semilla es una promesa..."), metáforas encadenadas, y las palabras "esperanza", "alma", "corazón", "susurro", "soñar".
+Entre 10 y 25 palabras, en español.
 
 Responde en formato JSON: {"text": "La cita", "author": "Autor"}
 PROMPT;
 
-        $response = $this->textGenerator->generate($prompt, [
-            'max_tokens' => 150,
-        ]);
+        $options = ['max_tokens' => 150];
+
+        if ($systemPrompt !== '') {
+            $options['system'] = $systemPrompt;
+        }
+
+        $response = $this->textGenerator->generate($prompt, $options);
 
         $response = preg_replace('/^```json\s*/m', '', $response);
         $response = preg_replace('/\s*```$/m', '', $response);

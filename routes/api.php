@@ -16,9 +16,10 @@ Route::get('/user', function (Request $request) {
 })->middleware('auth:sanctum');
 
 // Webhooks
-Route::post('webhooks/banana', [BananaCallbackController::class, 'handle']);
+Route::post('webhooks/banana', [BananaCallbackController::class, 'handle'])
+    ->middleware('throttle:30,1');
 
-Route::prefix('v1')->group(function (): void {
+Route::prefix('v1')->middleware('throttle:public-api')->group(function (): void {
     // Settings
     Route::get('settings', [SettingsController::class, 'show']);
     // Posts
@@ -37,9 +38,12 @@ Route::prefix('v1')->group(function (): void {
     Route::get('species', [SpeciesController::class, 'index']);
     Route::get('species/{species:slug}', [SpeciesController::class, 'show']);
 
-    // Newsletter
-    Route::post('newsletter/subscribe', [NewsletterSubscriptionController::class, 'store']);
+    // Public writes: tighter per-IP limit to curb abuse / table flooding.
+    Route::middleware('throttle:public-writes')->group(function (): void {
+        // Newsletter
+        Route::post('newsletter/subscribe', [NewsletterSubscriptionController::class, 'store']);
 
-    // Contact
-    Route::post('contact', [ContactMessageController::class, 'store']);
+        // Contact
+        Route::post('contact', [ContactMessageController::class, 'store']);
+    });
 });

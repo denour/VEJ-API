@@ -9,6 +9,7 @@ use App\Models\Author;
 use App\Models\ImageGenerationRequest;
 use App\Models\Post;
 use App\Models\PostBlock;
+use App\Observers\PostObserver;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -28,45 +29,83 @@ class PostGeneratorService
     {
         $data = $this->generatePostData($author, $topic, $options);
 
-        $slug = Str::slug($data['title']);
+        $slug = $this->resolveSlug($data['title']);
 
-        return DB::transaction(function () use ($slug, $data, $author, $options) {
-            $post = Post::updateOrCreate(
-                ['slug' => $slug],
-                [
-                    'title' => $data['title'],
-                    'excerpt' => $data['excerpt'],
-                    'content' => $data['content'], // Keep for backward compatibility
-                    'list' => [], // Will be auto-generated from heading blocks
-                    'category' => $data['category'],
-                    'tags' => $data['tags'],
-                    'author_id' => $author->id,
-                    'status' => $options['status'] ?? 'draft',
-                    'featured' => false,
-                    'reading_time' => $data['reading_time'],
-                    'published_at' => $options['published_at'] ?? null,
-                ]
-            );
+        // The observer is muted for the whole flow: this service is the single
+        // owner of image generation for the posts it creates (writing to
+        // PostBlock rows), so the observer's legacy content-JSON path must not
+        // fire a duplicate, paid image generation.
+        return PostObserver::muted(function () use ($slug, $data, $author, $options) {
+            $post = DB::transaction(function () use ($slug, $data, $author, $options) {
+                $post = Post::updateOrCreate(
+                    ['slug' => $slug],
+                    [
+                        'title' => $data['title'],
+                        'excerpt' => $data['excerpt'],
+                        'content' => $data['content'], // Keep for backward compatibility
+                        'list' => [], // Will be auto-generated from heading blocks
+                        'category' => $data['category'],
+                        'tags' => $data['tags'],
+                        'author_id' => $author->id,
+                        'status' => $options['status'] ?? 'draft',
+                        'featured' => false,
+                        'reading_time' => $data['reading_time'],
+                        'published_at' => $options['published_at'] ?? null,
+                    ]
+                );
 
-            // Delete existing blocks and create new ones
-            $post->blocks()->delete();
+                // Delete existing blocks and create new ones
+                $post->blocks()->delete();
 
-            // Create PostBlock records from content
-            $order = 0;
-            foreach ($data['content'] as $blockData) {
-                $this->createPostBlock($post, $blockData, $order);
-                $order++;
-            }
+                // Create PostBlock records from content
+                $order = 0;
+                foreach ($data['content'] as $blockData) {
+                    $this->createPostBlock($post, $blockData, $order);
+                    $order++;
+                }
 
-            // Auto-generate table of contents from heading blocks
-            $toc = $post->generateTableOfContents();
-            $post->update(['list' => $toc]);
+                // Auto-generate table of contents from heading blocks
+                $toc = $post->generateTableOfContents();
+                $post->update(['list' => $toc]);
 
-            // Generate images for the post (cover + block images)
+                return $post;
+            });
+
+            // Image generation issues slow synchronous HTTP calls (up to 180s
+            // each). It runs AFTER the DB transaction commits so those calls
+            // never hold a write transaction / row locks open.
             $this->generateImagesForPost($post, $data['structure']);
 
             return $post;
         });
+    }
+
+    /**
+     * Resolve a slug for a freshly generated post without clobbering an
+     * already-published article that happens to share the title. A draft with
+     * the same slug is reused (so same-day re-runs replace it); a published
+     * collision is disambiguated with a date/counter suffix.
+     */
+    private function resolveSlug(string $title): string
+    {
+        $slug = Str::slug($title);
+
+        $existing = Post::query()->where('slug', $slug)->first();
+
+        if (! $existing || $existing->status !== 'published') {
+            return $slug;
+        }
+
+        $base = $slug.'-'.now()->format('Ymd');
+        $candidate = $base;
+        $suffix = 2;
+
+        while (Post::query()->where('slug', $candidate)->exists()) {
+            $candidate = $base.'-'.$suffix;
+            $suffix++;
+        }
+
+        return $candidate;
     }
 
     /**
@@ -336,16 +375,55 @@ Responde ÚNICAMENTE en JSON válido:
 }
 PROMPT;
 
-        $response = $this->textGenerator->generate($prompt, [
-            'temperature' => 0.8,
-            'max_tokens' => 1500,
-        ]);
+        // A malformed/truncated structure JSON is fatal (every downstream block
+        // reads $structure['blocks']), so re-ask once before giving up rather
+        // than letting a single bad completion kill the whole daily post.
+        for ($attempt = 1; $attempt <= 2; $attempt++) {
+            $response = $this->textGenerator->generate($prompt, [
+                'temperature' => 0.8,
+                'max_tokens' => 1500,
+            ]);
 
+            $structure = $this->decodeStructureResponse($response);
+
+            if ($structure !== null) {
+                return $structure;
+            }
+
+            \Illuminate\Support\Facades\Log::warning('Post structure JSON was invalid; retrying', [
+                'attempt' => $attempt,
+                'response_preview' => mb_substr((string) $response, 0, 500),
+            ]);
+        }
+
+        throw new \RuntimeException('Post structure generation returned invalid JSON after retry.');
+    }
+
+    /**
+     * Decode and validate a structure response. Returns null when the payload
+     * is not valid JSON or is missing the fields the pipeline depends on.
+     */
+    private function decodeStructureResponse(string $response): ?array
+    {
         // Limpiar la respuesta (remover markdown code blocks si existen)
         $response = preg_replace('/^```json\s*/m', '', $response);
         $response = preg_replace('/\s*```$/m', '', $response);
 
-        return json_decode(trim($response), true);
+        $decoded = json_decode(trim((string) $response), true);
+
+        if (! is_array($decoded)) {
+            return null;
+        }
+
+        if (! isset($decoded['title']) || ! is_string($decoded['title']) || trim($decoded['title']) === '') {
+            return null;
+        }
+
+        if (empty($decoded['blocks']) || ! is_array($decoded['blocks'])) {
+            return null;
+        }
+
+        return $decoded;
     }
 
     /**
@@ -921,7 +999,9 @@ PROMPT;
                 default => '',
             };
 
-            $wordCount += str_word_count($text);
+            // Unicode-aware count: str_word_count() splits Spanish words at
+            // accented letters (jardín, poda), inflating the total.
+            $wordCount += preg_match_all('/[\p{L}\p{N}]+/u', $text);
         }
 
         // Average reading speed: 200 words per minute

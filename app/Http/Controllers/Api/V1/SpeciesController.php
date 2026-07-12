@@ -17,8 +17,14 @@ class SpeciesController extends Controller
         if ($perPage < 1) {
             $perPage = 12;
         }
+        $perPage = min($perPage, 50);
 
-        $cacheKey = 'species:index:' . md5(json_encode($request->all()) . $perPage . $request->get('page', 1));
+        $keyParts = $request->only([
+            'search', 'care_level', 'sunlight', 'watering', 'toxicity', 'growth_rate',
+        ]);
+        $keyParts['per_page'] = $perPage;
+        $keyParts['page'] = (int) $request->integer('page', 1);
+        $cacheKey = 'species:index:'.md5(json_encode($keyParts));
 
         $species = Cache::remember($cacheKey, now()->addMinutes(15), function () use ($request, $perPage) {
             $query = Species::query();
@@ -47,8 +53,8 @@ class SpeciesController extends Controller
 
     public function show(Species $species): SpeciesResource
     {
-        $cacheKey = 'species:show:' . $species->id;
-        
+        $cacheKey = 'species:show:'.$species->id;
+
         $species = Cache::remember($cacheKey, now()->addMinutes(30), fn () => $species);
 
         return new SpeciesResource($species);

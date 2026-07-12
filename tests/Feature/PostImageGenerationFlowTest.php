@@ -22,11 +22,22 @@ class PostImageGenerationFlowTest extends TestCase
     {
         parent::setUp();
 
+        config(['services.banana.webhook_secret' => 'test-webhook-secret']);
+
         MockBananaImageGenerator::clearTasks();
 
         $this->app->singleton(ImageGeneratorInterface::class, function () {
             return new MockBananaImageGenerator;
         });
+    }
+
+    /**
+     * POST to the banana webhook with the required shared-secret header.
+     */
+    private function postWebhook(array $payload): \Illuminate\Testing\TestResponse
+    {
+        return $this->withHeaders(['X-Webhook-Secret' => 'test-webhook-secret'])
+            ->postJson('/api/webhooks/banana', $payload);
     }
 
     protected function tearDown(): void
@@ -81,7 +92,7 @@ class PostImageGenerationFlowTest extends TestCase
             ],
         ];
 
-        $response = $this->postJson('/api/webhooks/banana', $realNanoBananaPayload);
+        $response = $this->postWebhook($realNanoBananaPayload);
 
         $response->assertOk()
             ->assertJsonStructure(['message', 'url']);
@@ -131,7 +142,7 @@ class PostImageGenerationFlowTest extends TestCase
         ]);
 
         // Simplified format (direct taskId and imageUrl)
-        $response = $this->postJson('/api/webhooks/banana', [
+        $response = $this->postWebhook([
             'taskId' => $taskId,
             'imageUrl' => $imageUrl,
         ]);
@@ -173,7 +184,7 @@ class PostImageGenerationFlowTest extends TestCase
         // Step 2: Webhook arrives with real NanoBanana format
         $webhookPayload = MockBananaImageGenerator::getWebhookPayload($request->external_id);
 
-        $response = $this->postJson('/api/webhooks/banana', $webhookPayload);
+        $response = $this->postWebhook($webhookPayload);
         $response->assertOk();
 
         // Step 3: Verify final state
@@ -205,7 +216,7 @@ class PostImageGenerationFlowTest extends TestCase
         ]);
 
         // Webhook without imageUrl (intermediate callback)
-        $response = $this->postJson('/api/webhooks/banana', [
+        $response = $this->postWebhook([
             'msg' => 'Processing...',
             'code' => 200,
             'data' => [
@@ -225,7 +236,7 @@ class PostImageGenerationFlowTest extends TestCase
 
     public function test_webhook_with_unknown_task_id_returns_202(): void
     {
-        $response = $this->postJson('/api/webhooks/banana', [
+        $response = $this->postWebhook([
             'taskId' => 'unknown-task-id',
             'imageUrl' => 'https://example.com/image.png',
         ]);
@@ -236,7 +247,7 @@ class PostImageGenerationFlowTest extends TestCase
 
     public function test_webhook_without_task_id_returns_422(): void
     {
-        $response = $this->postJson('/api/webhooks/banana', [
+        $response = $this->postWebhook([
             'imageUrl' => 'https://example.com/image.png',
         ]);
 

@@ -15,6 +15,37 @@ class BananaWebhookTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const WEBHOOK_SECRET = 'test-webhook-secret';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config(['services.banana.webhook_secret' => self::WEBHOOK_SECRET]);
+    }
+
+    /**
+     * POST to the banana webhook with the required shared-secret header.
+     */
+    private function postWebhook(array $payload): \Illuminate\Testing\TestResponse
+    {
+        return $this->withHeaders(['X-Webhook-Secret' => self::WEBHOOK_SECRET])
+            ->postJson('/api/webhooks/banana', $payload);
+    }
+
+    public function test_webhook_rejects_missing_secret(): void
+    {
+        $this->postJson('/api/webhooks/banana', ['taskId' => 'task-123'])
+            ->assertStatus(401);
+    }
+
+    public function test_webhook_rejects_wrong_secret(): void
+    {
+        $this->withHeaders(['X-Webhook-Secret' => 'wrong'])
+            ->postJson('/api/webhooks/banana', ['taskId' => 'task-123'])
+            ->assertStatus(401);
+    }
+
     public function test_webhook_updates_post_cover_image(): void
     {
         Storage::fake('s3');
@@ -44,7 +75,7 @@ class BananaWebhookTest extends TestCase
             ],
         ];
 
-        $this->postJson('/api/webhooks/banana', $payload)
+        $this->postWebhook($payload)
             ->assertOk()
             ->assertJsonStructure(['message', 'url']);
 
@@ -63,7 +94,7 @@ class BananaWebhookTest extends TestCase
 
     public function test_webhook_ignores_unknown_task(): void
     {
-        $this->postJson('/api/webhooks/banana', ['taskId' => 'unknown-task'])
+        $this->postWebhook(['taskId' => 'unknown-task'])
             ->assertStatus(202);
     }
 
@@ -96,7 +127,7 @@ class BananaWebhookTest extends TestCase
             ],
         ];
 
-        $this->postJson('/api/webhooks/banana', $payload)
+        $this->postWebhook($payload)
             ->assertOk()
             ->assertJsonStructure(['message', 'url']);
 
@@ -140,7 +171,7 @@ class BananaWebhookTest extends TestCase
             ],
         ];
 
-        $this->postJson('/api/webhooks/banana', $payload)
+        $this->postWebhook($payload)
             ->assertOk()
             ->assertJsonStructure(['message', 'url']);
 
@@ -185,7 +216,7 @@ class BananaWebhookTest extends TestCase
             'imageUrl' => 'http://example.com/cover.png',
         ];
 
-        $this->postJson('/api/webhooks/banana', $payload)
+        $this->postWebhook($payload)
             ->assertOk()
             ->assertJsonStructure(['message', 'url']);
 
@@ -244,7 +275,7 @@ class BananaWebhookTest extends TestCase
             'imageUrl' => 'http://example.com/content-image.png',
         ];
 
-        $this->postJson('/api/webhooks/banana', $payload)
+        $this->postWebhook($payload)
             ->assertOk()
             ->assertJsonStructure(['message', 'url']);
 
@@ -290,7 +321,7 @@ class BananaWebhookTest extends TestCase
         ];
 
         // Should still complete successfully (image stored, but no model updated)
-        $this->postJson('/api/webhooks/banana', $payload)
+        $this->postWebhook($payload)
             ->assertOk();
 
         $req->refresh();

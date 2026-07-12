@@ -64,7 +64,23 @@ class GenerateDailyPost extends Command
             // 6. Update author stats
             $author->incrementPostCount();
 
-            // 7. Dispatch social media publishing (5 min delay for images to complete)
+            $post->refresh();
+
+            // 7. Guard against silent image failure. Image generation catches its
+            //    own errors, so a cover can be missing while the post is already
+            //    'published'. Rather than syndicate an imageless post to social
+            //    media, keep it as a draft and surface a non-success exit code.
+            if (empty($post->cover_image)) {
+                $post->update(['status' => 'draft']);
+
+                $this->newLine();
+                $this->error("Cover image missing for \"{$post->title}\" — kept as draft, social media skipped.");
+                $this->line("Slug: {$post->slug}");
+
+                return self::FAILURE;
+            }
+
+            // 8. Dispatch social media publishing (5 min delay for images to complete)
             PublishToSocialMedia::dispatch($post)->delay(now()->addMinutes(5));
 
             $this->newLine();

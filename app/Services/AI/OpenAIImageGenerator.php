@@ -34,7 +34,7 @@ class OpenAIImageGenerator implements ImageGeneratorInterface
         $response = Http::withHeaders([
             'Authorization' => "Bearer {$this->apiKey}",
             'Content-Type' => 'application/json',
-        ])->timeout(180)->post('https://api.openai.com/v1/images/generations', [
+        ])->timeout(180)->retry(2, 1000, throw: false)->post('https://api.openai.com/v1/images/generations', [
             'model' => $model,
             'prompt' => $prompt,
             'size' => $size,

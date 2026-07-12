@@ -21,7 +21,7 @@ class OpenAITextGenerator implements TextGeneratorInterface
         $response = Http::withHeaders([
             'Authorization' => "Bearer {$this->apiKey}",
             'Content-Type' => 'application/json',
-        ])->timeout(120)->post('https://api.openai.com/v1/chat/completions', [
+        ])->timeout(120)->retry(2, 500, throw: false)->post('https://api.openai.com/v1/chat/completions', [
             'model' => $options['model'] ?? $this->model,
             'messages' => [
                 [
@@ -39,7 +39,16 @@ class OpenAITextGenerator implements TextGeneratorInterface
             throw new \RuntimeException("OpenAI API error: {$response->body()}");
         }
 
-        return $response->json('choices.0.message.content');
+        $content = $response->json('choices.0.message.content');
+
+        // A refusal, an empty `choices` array, or a reasoning response with no
+        // message content yields null here — the method is typed `: string`, so
+        // returning it would throw a TypeError and abort the whole daily run.
+        if (! is_string($content) || trim($content) === '') {
+            throw new \RuntimeException('OpenAI returned an empty or non-text completion.');
+        }
+
+        return $content;
     }
 
     public function getProviderName(): string

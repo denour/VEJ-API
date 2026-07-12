@@ -16,6 +16,7 @@ class FaqController extends Controller
         if ($perPage < 1) {
             $perPage = 20;
         }
+        $perPage = min($perPage, 50);
 
         $query = Faq::query();
 

@@ -18,10 +18,17 @@ class PostController extends Controller
         if ($perPage < 1) {
             $perPage = 12;
         }
+        $perPage = min($perPage, 50);
 
-        // Generate cache key based on request params
-        $cacheKey = 'posts:index:' . md5(json_encode($request->all()) . $perPage . $request->get('page', 1));
-        
+        // Cache key from an explicit allowlist of supported params so junk query
+        // strings can't blow up the cache with unique, never-hit entries.
+        $keyParts = $request->only([
+            'q', 'category', 'status', 'featured', 'published_before', 'published_after',
+        ]);
+        $keyParts['per_page'] = $perPage;
+        $keyParts['page'] = (int) $request->integer('page', 1);
+        $cacheKey = 'posts:index:'.md5(json_encode($keyParts));
+
         $posts = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($request, $perPage) {
             $query = Post::query();
 
@@ -68,8 +75,8 @@ class PostController extends Controller
 
     public function show(Post $post): PostResource
     {
-        $cacheKey = 'posts:show:' . $post->id;
-        
+        $cacheKey = 'posts:show:'.$post->id;
+
         $post = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($post) {
             $post->load(['author', 'blocks']);
 
@@ -82,7 +89,7 @@ class PostController extends Controller
                 ->get();
 
             $post->setRelation('relatedPosts', $related);
-            
+
             return $post;
         });
 

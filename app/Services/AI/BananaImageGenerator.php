@@ -43,7 +43,6 @@ class BananaImageGenerator implements ImageGeneratorInterface
             'callBackUrl' => url('api/webhooks/banana'),
             'aspectRatio' => $options['aspectRatio'] ?? '16:9',
         ];
-        \Log::error($payload);
 
         $response = Http::withHeaders([
             'Authorization' => "Bearer {$this->apiKey}",

@@ -12,18 +12,18 @@ class NewsletterSubscriptionController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'email' => ['required', 'email', 'max:255', 'unique:newsletter_subscriptions,email'],
+            'email' => ['required', 'email', 'max:255'],
         ]);
 
-        $subscription = NewsletterSubscription::create([
-            'email' => $data['email'],
-        ]);
+        // firstOrCreate + an identical response whether or not the email already
+        // existed, so the endpoint can't be used to enumerate who is subscribed
+        // (a unique-rule 422 vs 201 divergence would leak membership).
+        NewsletterSubscription::firstOrCreate(['email' => $data['email']]);
 
         return response()->json([
             'message' => 'Subscribed successfully',
             'data' => [
-                'id' => $subscription->getKey(),
-                'email' => $subscription->email,
+                'email' => $data['email'],
             ],
         ], 201);
     }

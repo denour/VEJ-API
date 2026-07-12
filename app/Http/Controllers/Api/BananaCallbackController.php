@@ -16,6 +16,16 @@ class BananaCallbackController extends Controller
 {
     public function handle(Request $request): JsonResponse
     {
+        // Fail closed unless the provider presents the configured shared secret.
+        // This authenticates the callback (blocking the SSRF / image-overwrite
+        // path) and, when no secret is set, disables the endpoint entirely —
+        // the async provider it serves is currently inactive.
+        $secret = (string) config('services.banana.webhook_secret');
+
+        if ($secret === '' || ! hash_equals($secret, (string) $request->header('X-Webhook-Secret'))) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
         $payload = $request->all();
 
         // Try to support multiple payload shapes from Nano Banana

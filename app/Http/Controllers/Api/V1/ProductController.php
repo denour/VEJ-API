@@ -17,8 +17,15 @@ class ProductController extends Controller
         if ($perPage < 1) {
             $perPage = 12;
         }
+        $perPage = min($perPage, 50);
 
-        $cacheKey = 'products:index:' . md5(json_encode($request->all()) . $perPage . $request->get('page', 1));
+        $keyParts = $request->only([
+            'search', 'type', 'care_level', 'sunlight', 'watering', 'condition', 'size',
+            'in_stock', 'is_rare', 'min_price', 'max_price',
+        ]);
+        $keyParts['per_page'] = $perPage;
+        $keyParts['page'] = (int) $request->integer('page', 1);
+        $cacheKey = 'products:index:'.md5(json_encode($keyParts));
 
         $products = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($request, $perPage) {
             $query = Product::query();
@@ -62,8 +69,8 @@ class ProductController extends Controller
 
     public function show(Product $product): ProductResource
     {
-        $cacheKey = 'products:show:' . $product->id;
-        
+        $cacheKey = 'products:show:'.$product->id;
+
         $product = Cache::remember($cacheKey, now()->addMinutes(10), fn () => $product);
 
         return new ProductResource($product);

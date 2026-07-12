@@ -37,6 +37,10 @@ return [
 
     'banana' => [
         'callback_url' => env('BANANA_CALLBACK_URL'),
+        // Shared secret the Nano Banana provider must send (header
+        // `X-Webhook-Secret`) for its callbacks to be accepted. When unset the
+        // webhook fails closed — safe default while the async provider is off.
+        'webhook_secret' => env('BANANA_WEBHOOK_SECRET'),
     ],
 
 ];

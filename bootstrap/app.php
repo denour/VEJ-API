@@ -13,7 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
@@ -29,8 +29,11 @@ return Application::configure(basePath: dirname(__DIR__))
             ->everyThirtySeconds()
             ->withoutOverlapping();
 
-        // Process queued jobs inline (no dedicated worker instance)
-        $schedule->command('queue:work --stop-when-empty --max-time=50')
+        // Process queued jobs inline (no dedicated worker instance). max-time must
+        // clear PublishToSocialMedia's own $timeout (480s, OpenAI image gen can take
+        // up to 180s + retries) or the worker gets killed mid-job before it finishes.
+        // withoutOverlapping() means a long-running tick simply skips the next minute.
+        $schedule->command('queue:work --stop-when-empty --max-time=520')
             ->everyMinute()
             ->withoutOverlapping();
     })

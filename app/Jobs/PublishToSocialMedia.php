@@ -16,6 +16,15 @@ class PublishToSocialMedia implements ShouldQueue
 
     public int $backoff = 60;
 
+    /**
+     * generateSocialImage() calls OpenAI with an HTTP timeout of 180s (+ retries);
+     * the job's own timeout defaulted to Laravel's 60s and killed it mid-request
+     * before the image ever came back. Confirmed via failed_jobs (2026-07-24,
+     * 2026-07-25): TimeoutExceededException from PublishToSocialMedia, both times
+     * on the automatic 9am dispatch. Neither automatic run has ever completed.
+     */
+    public int $timeout = 480;
+
     public function __construct(
         public Post $post,
     ) {}

@@ -7,6 +7,7 @@ use App\Contracts\AI\TextGeneratorInterface;
 use App\Models\Post;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class SocialMediaPublisher
@@ -14,6 +15,7 @@ class SocialMediaPublisher
     public function __construct(
         private readonly ImageGeneratorInterface $imageGenerator,
         private readonly TextGeneratorInterface $textGenerator,
+        private readonly SocialImageComposer $imageComposer = new SocialImageComposer,
     ) {}
 
     /**
@@ -123,26 +125,60 @@ PROMPT;
     }
 
     /**
-     * Generate a social-media-optimized image with a short hook overlay.
+     * Generate the social card: the article's own cover photo with the hook,
+     * category and brand drawn on top deterministically (GD), so the copy is
+     * never missing or garbled — which is what happened when we asked the image
+     * model to render the text itself.
+     *
+     * The cover is the background; we only ask the image model for a fresh
+     * background when the post has no cover.
      */
     private function generateSocialImage(Post $post, string $hook): string
     {
         $category = $post->category ?? 'Jardinería';
 
-        $prompt = <<<PROMPT
-Create a stunning social media image for a gardening blog post.
+        $backgroundUrl = $post->cover_image ?: $this->generateBackground($post);
 
-The image must include this SHORT hook text elegantly overlaid: "{$hook}"
+        try {
+            $backgroundBytes = Http::timeout(120)->get($backgroundUrl)->body();
+            $card = $this->imageComposer->overlay($backgroundBytes, $hook, $category);
+
+            $path = 'social/'.uniqid('card-', true).'.png';
+            Storage::disk('s3')->put($path, $card, ['visibility' => 'public']);
+
+            return Storage::disk('s3')->url($path);
+        } catch (\Throwable $e) {
+            // Never make the card worse than the plain background: fall back to it.
+            Log::error('Failed to overlay social card text, using plain background', [
+                'post_id' => $post->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $backgroundUrl;
+        }
+    }
+
+    /**
+     * Ask the image model for a text-free background photo. Only used when the
+     * post has no cover image of its own.
+     */
+    private function generateBackground(Post $post): string
+    {
+        $category = $post->category ?? 'Jardinería';
+        $title = $post->title;
+
+        // Background ONLY — the model must not render any text; we overlay it.
+        $prompt = <<<PROMPT
+Create a stunning background photograph for a gardening social media card.
+
+Theme of the article: "{$title}" (category: {$category}).
 
 Style requirements:
 - Square format (1:1 aspect ratio) for Instagram and Facebook
-- Vibrant plant photography as background with cinematic lighting
-- The hook text should be large, readable, and beautifully integrated
-- Use a semi-transparent dark overlay behind the text for readability
-- Modern editorial aesthetic, clean typography
-- Category badge: "{$category}"
-- Brand: "Vida en el Jardín" as small watermark in corner
-- No other text besides the hook, category, and brand
+- Vibrant plant photography with cinematic, natural lighting
+- Rich composition that leaves the lower third visually calm for a text overlay
+- Modern editorial aesthetic, shallow depth of field
+- IMPORTANT: absolutely NO text, NO letters, NO words, NO logos, NO watermarks anywhere in the image
 PROMPT;
 
         return $this->imageGenerator->generate($prompt, [

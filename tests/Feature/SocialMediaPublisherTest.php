@@ -125,8 +125,29 @@ class SocialMediaPublisherTest extends TestCase
         $this->assertGreaterThan(3, substr_count($caption, '#'));
     }
 
-    public function test_social_image_prompt_uses_hook_not_seo_title(): void
+    public function test_social_card_uses_post_cover_as_background(): void
     {
+        // With a cover present the model must NOT be called — the cover is the bg.
+        $imageMock = $this->createMock(ImageGeneratorInterface::class);
+        $imageMock->expects($this->never())->method('generate');
+
+        $post = $this->samplePost();
+        $post->cover_image = 'https://cdn.example.com/covers/mi-post.png';
+
+        \Illuminate\Support\Facades\Storage::fake('s3');
+        \Illuminate\Support\Facades\Http::fake([
+            'https://cdn.example.com/covers/*' => \Illuminate\Support\Facades\Http::response($this->solidPng()),
+        ]);
+
+        $url = $this->invoke($this->publisher(null, $imageMock), 'generateSocialImage', $post, 'Tu balcon puede ser un jardin');
+
+        $this->assertStringContainsString('social/card-', $url);
+    }
+
+    public function test_social_image_prompt_forbids_ai_rendered_text(): void
+    {
+        // The hook is drawn by GD, not the model — so the background prompt must
+        // NOT ask the model to render the hook, and must forbid any text.
         $captured = '';
         $imageMock = $this->createMock(ImageGeneratorInterface::class);
         $imageMock->method('isSynchronous')->willReturn(true);
@@ -134,13 +155,51 @@ class SocialMediaPublisherTest extends TestCase
         $imageMock->method('generate')->willReturnCallback(function (string $prompt) use (&$captured) {
             $captured = $prompt;
 
-            return 'https://cdn.example.com/social/card.png';
+            return 'https://cdn.example.com/social/bg.png';
         });
+
+        \Illuminate\Support\Facades\Storage::fake('s3');
+        \Illuminate\Support\Facades\Http::fake([
+            'https://cdn.example.com/*' => \Illuminate\Support\Facades\Http::response($this->solidPng()),
+        ]);
 
         $url = $this->invoke($this->publisher(null, $imageMock), 'generateSocialImage', $this->samplePost(), 'Tu balcon puede ser un jardin');
 
-        $this->assertSame('https://cdn.example.com/social/card.png', $url);
-        $this->assertStringContainsString('Tu balcon puede ser un jardin', $captured);
-        $this->assertStringNotContainsString('Sustratos vivos: biobandas', $captured);
+        // Prompt drives the background only: no hook text, and text is forbidden.
+        $this->assertStringNotContainsString('Tu balcon puede ser un jardin', $captured);
+        $this->assertStringContainsString('NO text', $captured);
+
+        // The returned URL is the composited card we stored, not the raw background.
+        $this->assertStringContainsString('social/card-', $url);
+    }
+
+    public function test_social_image_falls_back_to_background_when_overlay_fails(): void
+    {
+        $imageMock = $this->createMock(ImageGeneratorInterface::class);
+        $imageMock->method('isSynchronous')->willReturn(true);
+        $imageMock->method('getProviderName')->willReturn('test');
+        $imageMock->method('generate')->willReturn('https://cdn.example.com/social/bg.png');
+
+        \Illuminate\Support\Facades\Storage::fake('s3');
+        // Non-image bytes → the composer throws → we fall back to the background URL.
+        \Illuminate\Support\Facades\Http::fake([
+            'https://cdn.example.com/*' => \Illuminate\Support\Facades\Http::response('not-an-image'),
+        ]);
+
+        $url = $this->invoke($this->publisher(null, $imageMock), 'generateSocialImage', $this->samplePost(), 'Tu balcon puede ser un jardin');
+
+        $this->assertSame('https://cdn.example.com/social/bg.png', $url);
+    }
+
+    private function solidPng(int $size = 256): string
+    {
+        $image = imagecreatetruecolor($size, $size);
+        imagefill($image, 0, 0, imagecolorallocate($image, 40, 90, 60));
+        ob_start();
+        imagepng($image);
+        $png = (string) ob_get_clean();
+        imagedestroy($image);
+
+        return $png;
     }
 }

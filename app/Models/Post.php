@@ -31,6 +31,7 @@ class Post extends Model
         'featured',
         'status',
         'social_image',
+        'social_images',
         'facebook_post_id',
         'instagram_post_id',
         'social_published_at',
@@ -41,6 +42,7 @@ class Post extends Model
         return [
             'content' => 'array',
             'tags' => 'array',
+            'social_images' => 'array',
             'list' => 'array',
             'published_at' => 'datetime',
             'featured' => 'boolean',
@@ -57,14 +59,14 @@ class Post extends Model
         });
     }
 
-//    protected function coverImage(): Attribute
-//    {
-//        return Attribute::make(
-//            get: fn (?string $value) => $value ? Storage::disk('s3')->url($value) : null,
-//            set: fn (?string $value) => $value,
-//        );
-//    }
-//
+    //    protected function coverImage(): Attribute
+    //    {
+    //        return Attribute::make(
+    //            get: fn (?string $value) => $value ? Storage::disk('s3')->url($value) : null,
+    //            set: fn (?string $value) => $value,
+    //        );
+    //    }
+    //
     public function author(): BelongsTo
     {
         return $this->belongsTo(Author::class);

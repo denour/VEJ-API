@@ -19,8 +19,10 @@ class SocialImageComposerTest extends TestCase
         return $png;
     }
 
-    public function test_overlay_returns_valid_png_of_same_dimensions(): void
+    public function test_overlay_returns_valid_png_cropped_to_the_4_5_canvas(): void
     {
+        // Square source on purpose: the composer must cover-crop it to 4:5,
+        // not just pass the source dimensions through.
         $bg = $this->backgroundPng(512);
 
         $card = (new SocialImageComposer)->overlay($bg, 'Tu balcón puede florecer', 'Consejos');
@@ -29,10 +31,10 @@ class SocialImageComposerTest extends TestCase
 
         $result = imagecreatefromstring($card);
         $this->assertNotFalse($result);
-        $this->assertSame(512, imagesx($result));
-        $this->assertSame(512, imagesy($result));
+        $this->assertSame(1080, imagesx($result));
+        $this->assertSame(1350, imagesy($result));
 
-        // Compositing must actually change the pixels (scrim + text drawn).
+        // Compositing must actually change the pixels (card + text drawn).
         $this->assertNotSame($bg, $card);
     }
 
@@ -46,15 +48,15 @@ class SocialImageComposerTest extends TestCase
         $this->assertNotFalse(imagecreatefromstring($card));
     }
 
-    public function test_overlay_handles_empty_hook_category_and_brand(): void
+    public function test_overlay_handles_empty_hook_and_category(): void
     {
         $bg = $this->backgroundPng(400);
 
-        $card = (new SocialImageComposer)->overlay($bg, '', '', '');
+        $card = (new SocialImageComposer)->overlay($bg, '', '');
 
         $result = imagecreatefromstring($card);
         $this->assertNotFalse($result);
-        $this->assertSame(400, imagesx($result));
+        $this->assertSame(1080, imagesx($result));
     }
 
     public function test_overlay_throws_on_undecodable_background(): void

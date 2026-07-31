@@ -28,32 +28,25 @@ class SocialMediaPublisher
         $results = ['facebook' => null, 'instagram' => null];
 
         $copy = $this->generateSocialCopy($post);
+        $slides = $this->generateSocialSlides($post, $copy['social_hook'], $copy['carousel_tips']);
 
-        try {
-            $socialImageUrl = $this->generateSocialImage($post, $copy['social_hook']);
-            $post->update(['social_image' => $socialImageUrl]);
-        } catch (\Throwable $e) {
-            Log::error('Failed to generate social image', [
-                'post_id' => $post->id,
-                'error' => $e->getMessage(),
-            ]);
+        if ($slides === []) {
+            Log::error('No image available for social publishing', ['post_id' => $post->id]);
 
-            // Fall back to cover image
-            $socialImageUrl = $post->cover_image;
-
-            if (! $socialImageUrl) {
-                Log::error('No image available for social publishing', ['post_id' => $post->id]);
-
-                return $results;
-            }
+            return $results;
         }
 
+        $post->update([
+            'social_image' => $slides[0],
+            'social_images' => $slides,
+        ]);
+
         if (config('social.facebook.enabled')) {
-            $results['facebook'] = $this->publishToFacebook($post, $socialImageUrl, $this->buildFacebookCaption($post, $copy['fb_body']));
+            $results['facebook'] = $this->publishToFacebook($post, $slides[0], $this->buildFacebookCaption($post, $copy['fb_body']));
         }
 
         if (config('social.instagram.enabled')) {
-            $results['instagram'] = $this->publishToInstagram($post, $socialImageUrl, $this->buildInstagramCaption($post, $copy['ig_body']));
+            $results['instagram'] = $this->publishToInstagram($post, $slides, $this->buildInstagramCaption($post, $copy['ig_body']));
         }
 
         $post->update([
@@ -68,7 +61,7 @@ class SocialMediaPublisher
     /**
      * Generate platform-tailored social copy in a single AI call.
      *
-     * @return array{social_hook: string, fb_body: string, ig_body: string}
+     * @return array{social_hook: string, fb_body: string, ig_body: string, carousel_tips: list<string>}
      */
     private function generateSocialCopy(Post $post): array
     {
@@ -86,23 +79,26 @@ RESUMEN: {$excerpt}
 
 Devuelve EXCLUSIVAMENTE JSON válido, sin texto adicional, con esta estructura:
 {
-  "social_hook": "Gancho cortísimo de 5 a 8 palabras para sobreponer en la imagen. Emocional o que despierte curiosidad, NADA de tono SEO. Sin hashtags, sin emoji, sin comillas.",
+  "social_hook": "Gancho cortísimo de 5 a 8 palabras para sobreponer en la imagen de portada. Emocional o que despierte curiosidad, NADA de tono SEO. Sin hashtags, sin emoji, sin comillas.",
   "fb_body": "Texto para Facebook: 2-3 frases cálidas e informativas que enganchen al lector. En español mexicano. Sin enlaces y sin hashtags (se agregan aparte). Máximo 1 emoji.",
-  "ig_body": "Texto para Instagram: cercano y visual, 1-2 frases con 2-4 emoji bien colocados. En español mexicano. Sin enlaces y sin hashtags (se agregan aparte)."
+  "ig_body": "Texto para Instagram: cercano y visual, 1-2 frases con 2-4 emoji bien colocados. En español mexicano. Sin enlaces y sin hashtags (se agregan aparte).",
+  "carousel_tips": "Lista de EXACTAMENTE 3 ganchos cortísimos (5 a 8 palabras cada uno), mismo tono que social_hook, cada uno un consejo o dato distinto y concreto del artículo — para las siguientes tarjetas de un carrusel. Sin numerar, sin hashtags, sin emoji, sin comillas."
 }
 PROMPT;
 
         $raw = $this->textGenerator->generate($prompt, [
             'system' => 'Eres un community manager experto en jardinería. Devuelve solo JSON válido.',
-            'max_tokens' => 400,
+            'max_tokens' => 500,
         ]);
 
         $data = $this->parseJsonObject($raw);
+        $tips = is_array($data['carousel_tips'] ?? null) ? $data['carousel_tips'] : [];
 
         return [
             'social_hook' => trim($data['social_hook'] ?? Str::limit($post->title, 50, '')),
             'fb_body' => trim($data['fb_body'] ?? ($excerpt !== '' ? $excerpt : $title)),
             'ig_body' => trim($data['ig_body'] ?? ($excerpt !== '' ? $excerpt : $title)),
+            'carousel_tips' => collect($tips)->filter(fn ($tip) => is_string($tip) && trim($tip) !== '')->map(fn ($tip) => trim($tip))->take(3)->values()->all(),
         ];
     }
 
@@ -125,37 +121,102 @@ PROMPT;
     }
 
     /**
-     * Generate the social card: the article's own cover photo with the hook,
-     * category and brand drawn on top deterministically (GD), so the copy is
-     * never missing or garbled — which is what happened when we asked the image
-     * model to render the text itself.
+     * Build the carousel: a hero slide (cover photo + hook) followed by up to
+     * 3 tip slides, each using one of the post's own inline images as the
+     * background. Every slide is composited deterministically (GD), so the
+     * copy is never missing or garbled — what happened when we asked the
+     * image model to render the text itself.
      *
-     * The cover is the background; we only ask the image model for a fresh
-     * background when the post has no cover.
+     * Returns the list of stored slide URLs, hero first. A tip slide that
+     * fails to compose is skipped rather than failing the whole post; if the
+     * hero itself fails, falls back to the plain cover/background so the post
+     * still has something to publish.
+     *
+     * @return list<string>
      */
-    private function generateSocialImage(Post $post, string $hook): string
+    private function generateSocialSlides(Post $post, string $hook, array $tips): array
     {
         $category = $post->category ?? 'Jardinería';
-
-        $backgroundUrl = $post->cover_image ?: $this->generateBackground($post);
+        $slides = [];
+        $heroBackground = null;
 
         try {
-            $backgroundBytes = Http::timeout(120)->get($backgroundUrl)->body();
-            $card = $this->imageComposer->overlay($backgroundBytes, $hook, $category);
-
-            $path = 'social/'.uniqid('card-', true).'.png';
-            Storage::disk('s3')->put($path, $card, ['visibility' => 'public']);
-
-            return Storage::disk('s3')->url($path);
+            $heroBackground = $post->cover_image ?: $this->generateBackground($post);
+            $slides[] = $this->composeSlide($heroBackground, $hook, $category);
         } catch (\Throwable $e) {
-            // Never make the card worse than the plain background: fall back to it.
-            Log::error('Failed to overlay social card text, using plain background', [
+            Log::error('Failed to build hero social card, falling back to plain background', [
                 'post_id' => $post->id,
                 'error' => $e->getMessage(),
             ]);
 
-            return $backgroundUrl;
+            // The overlay may have failed after we got a background, or the
+            // background itself may never have been generated — only use it
+            // if we actually have one.
+            if ($heroBackground) {
+                $slides[] = $heroBackground;
+            }
         }
+
+        if ($slides === []) {
+            return [];
+        }
+
+        $tipBackgrounds = $this->tipBackgroundUrls($post, count($tips));
+
+        foreach ($tips as $i => $tip) {
+            if (! isset($tipBackgrounds[$i])) {
+                break;
+            }
+
+            try {
+                $slides[] = $this->composeSlide($tipBackgrounds[$i], $tip, $category);
+            } catch (\Throwable $e) {
+                Log::error('Failed to overlay carousel tip slide, skipping it', [
+                    'post_id' => $post->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $slides;
+    }
+
+    /**
+     * Download a background, overlay the card text on it, and store the result.
+     */
+    private function composeSlide(string $backgroundUrl, string $text, string $category): string
+    {
+        $backgroundBytes = Http::timeout(120)->get($backgroundUrl)->body();
+        $card = $this->imageComposer->overlay($backgroundBytes, $text, $category);
+
+        $path = 'social/'.uniqid('card-', true).'.png';
+        Storage::disk('s3')->put($path, $card, ['visibility' => 'public']);
+
+        return Storage::disk('s3')->url($path);
+    }
+
+    /**
+     * The post's own inline photos (from its content blocks), in article
+     * order, to use as backgrounds for carousel tip slides. Reads the
+     * `blocks` relation via property access (not a fresh `blocks()` query) so
+     * tests can inject blocks with `setRelation()` without touching the DB.
+     *
+     * @return list<string>
+     */
+    private function tipBackgroundUrls(Post $post, int $limit): array
+    {
+        if ($limit === 0) {
+            return [];
+        }
+
+        return $post->blocks
+            ->where('type', 'image')
+            ->sortBy('order')
+            ->map(fn ($block) => $block->data['url'] ?? null)
+            ->filter()
+            ->take($limit)
+            ->values()
+            ->all();
     }
 
     /**
@@ -174,15 +235,15 @@ Create a stunning background photograph for a gardening social media card.
 Theme of the article: "{$title}" (category: {$category}).
 
 Style requirements:
-- Square format (1:1 aspect ratio) for Instagram and Facebook
+- Portrait format (4:5 aspect ratio) for Instagram and Facebook
 - Vibrant plant photography with cinematic, natural lighting
-- Rich composition that leaves the lower third visually calm for a text overlay
+- Rich composition that leaves the upper-left area visually calm for a text overlay
 - Modern editorial aesthetic, shallow depth of field
 - IMPORTANT: absolutely NO text, NO letters, NO words, NO logos, NO watermarks anywhere in the image
 PROMPT;
 
         return $this->imageGenerator->generate($prompt, [
-            'aspectRatio' => '1:1',
+            'aspectRatio' => '4:5',
             'quality' => 'high',
             'directory' => 'social',
         ]);
@@ -276,10 +337,13 @@ PROMPT;
     }
 
     /**
-     * Publish a photo post to Instagram Business Account.
-     * Instagram requires a 2-step process: create media container, then publish.
+     * Publish to Instagram Business Account: a carousel when there's more than
+     * one slide, a single photo post otherwise. Either way it's a 2-step
+     * process — create the container(s), then publish.
+     *
+     * @param  list<string>  $imageUrls
      */
-    private function publishToInstagram(Post $post, string $imageUrl, string $caption): ?string
+    private function publishToInstagram(Post $post, array $imageUrls, string $caption): ?string
     {
         $accountId = config('social.instagram.account_id');
         $accessToken = config('social.facebook.access_token'); // Uses same FB token
@@ -291,34 +355,17 @@ PROMPT;
         }
 
         try {
-            // Step 1: Create media container
-            $containerResponse = Http::post("https://graph.facebook.com/v21.0/{$accountId}/media", [
-                'image_url' => $imageUrl,
-                'caption' => $caption,
-                'access_token' => $accessToken,
-            ]);
-
-            if (! $containerResponse->successful()) {
-                Log::error('Instagram container creation failed', [
-                    'post_id' => $post->id,
-                    'error' => $containerResponse->body(),
-                ]);
-
-                return null;
-            }
-
-            $creationId = $containerResponse->json('id');
+            $creationId = count($imageUrls) > 1
+                ? $this->createInstagramCarouselContainer($post, $accountId, $accessToken, $imageUrls, $caption)
+                : $this->createInstagramSingleContainer($post, $accountId, $accessToken, $imageUrls[0], $caption);
 
             if (! $creationId) {
-                Log::error('Instagram container returned no ID', ['post_id' => $post->id]);
-
                 return null;
             }
 
-            // Brief pause for Instagram to process the container
+            // Brief pause for Instagram to process the container(s)
             sleep(5);
 
-            // Step 2: Publish the container
             $publishResponse = Http::post("https://graph.facebook.com/v21.0/{$accountId}/media_publish", [
                 'creation_id' => $creationId,
                 'access_token' => $accessToken,
@@ -349,5 +396,101 @@ PROMPT;
 
             return null;
         }
+    }
+
+    /**
+     * Create a single-photo media container with its caption.
+     */
+    private function createInstagramSingleContainer(Post $post, string $accountId, string $accessToken, string $imageUrl, string $caption): ?string
+    {
+        $response = Http::post("https://graph.facebook.com/v21.0/{$accountId}/media", [
+            'image_url' => $imageUrl,
+            'caption' => $caption,
+            'access_token' => $accessToken,
+        ]);
+
+        if (! $response->successful()) {
+            Log::error('Instagram container creation failed', [
+                'post_id' => $post->id,
+                'error' => $response->body(),
+            ]);
+
+            return null;
+        }
+
+        $creationId = $response->json('id');
+
+        if (! $creationId) {
+            Log::error('Instagram container returned no ID', ['post_id' => $post->id]);
+
+            return null;
+        }
+
+        return $creationId;
+    }
+
+    /**
+     * Create a carousel: one child container per slide (no caption on
+     * children — captions only go on the parent), then a parent container
+     * referencing all of them.
+     *
+     * @param  list<string>  $imageUrls
+     */
+    private function createInstagramCarouselContainer(Post $post, string $accountId, string $accessToken, array $imageUrls, string $caption): ?string
+    {
+        $childIds = [];
+
+        foreach ($imageUrls as $imageUrl) {
+            $childResponse = Http::post("https://graph.facebook.com/v21.0/{$accountId}/media", [
+                'image_url' => $imageUrl,
+                'is_carousel_item' => true,
+                'access_token' => $accessToken,
+            ]);
+
+            if (! $childResponse->successful()) {
+                Log::error('Instagram carousel item creation failed', [
+                    'post_id' => $post->id,
+                    'error' => $childResponse->body(),
+                ]);
+
+                return null;
+            }
+
+            $childId = $childResponse->json('id');
+
+            if (! $childId) {
+                Log::error('Instagram carousel item returned no ID', ['post_id' => $post->id]);
+
+                return null;
+            }
+
+            $childIds[] = $childId;
+        }
+
+        $parentResponse = Http::post("https://graph.facebook.com/v21.0/{$accountId}/media", [
+            'media_type' => 'CAROUSEL',
+            'children' => implode(',', $childIds),
+            'caption' => $caption,
+            'access_token' => $accessToken,
+        ]);
+
+        if (! $parentResponse->successful()) {
+            Log::error('Instagram carousel container creation failed', [
+                'post_id' => $post->id,
+                'error' => $parentResponse->body(),
+            ]);
+
+            return null;
+        }
+
+        $creationId = $parentResponse->json('id');
+
+        if (! $creationId) {
+            Log::error('Instagram carousel container returned no ID', ['post_id' => $post->id]);
+
+            return null;
+        }
+
+        return $creationId;
     }
 }

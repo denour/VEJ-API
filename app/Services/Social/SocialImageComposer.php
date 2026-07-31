@@ -32,25 +32,39 @@ class SocialImageComposer
     private const BRAND_GREEN = [34, 108, 62];
 
     /**
+     * Instagram feed favors 4:5 portrait over square — it claims more of the
+     * screen and reads better in-feed. Facebook renders 4:5 fine too, so we
+     * use one target size for both platforms.
+     */
+    private const CANVAS_WIDTH = 1080;
+
+    private const CANVAS_HEIGHT = 1350;
+
+    /**
      * Overlay the hook, category badge and brand watermark on the background.
+     * The background is cropped-to-fill the target canvas (like CSS
+     * object-fit: cover), so any source aspect ratio works.
      *
      * @param  string  $backgroundPng  Raw PNG/JPEG bytes of the background image.
      * @return string Raw PNG bytes of the composited card.
      */
-    public function overlay(string $backgroundPng, string $hook, string $category, string $brand = 'Vida en el Jardín'): string
+    public function overlay(string $backgroundPng, string $hook, string $category): string
     {
         // Silence GD's warning on bad data; we handle the false return ourselves.
-        $image = @imagecreatefromstring($backgroundPng);
+        $source = @imagecreatefromstring($backgroundPng);
 
-        if ($image === false) {
+        if ($source === false) {
             throw new \RuntimeException('Could not decode background image for social overlay.');
         }
 
+        $width = self::CANVAS_WIDTH;
+        $height = self::CANVAS_HEIGHT;
+
+        $image = $this->coverCrop($source, $width, $height);
+        imagedestroy($source);
+
         imagealphablending($image, true);
         imagesavealpha($image, true);
-
-        $width = imagesx($image);
-        $height = imagesy($image);
 
         $badgeBottom = $this->drawCategoryBadge($image, $category, $width, $height);
         $this->drawHook($image, $hook, $width, $height, $badgeBottom);
@@ -63,6 +77,36 @@ class SocialImageComposer
         imagedestroy($image);
 
         return $png;
+    }
+
+    /**
+     * Resize+crop $source to exactly fill a $targetWidth x $targetHeight
+     * canvas without distortion (equivalent to CSS object-fit: cover).
+     *
+     * @param  \GdImage  $source
+     * @return \GdImage
+     */
+    private function coverCrop($source, int $targetWidth, int $targetHeight)
+    {
+        $sourceWidth = imagesx($source);
+        $sourceHeight = imagesy($source);
+
+        $scale = max($targetWidth / $sourceWidth, $targetHeight / $sourceHeight);
+        $scaledWidth = (int) ceil($sourceWidth * $scale);
+        $scaledHeight = (int) ceil($sourceHeight * $scale);
+
+        $canvas = imagecreatetruecolor($targetWidth, $targetHeight);
+        imagealphablending($canvas, true);
+        imagesavealpha($canvas, true);
+
+        $srcX = (int) (($scaledWidth - $targetWidth) / 2 / $scale);
+        $srcY = (int) (($scaledHeight - $targetHeight) / 2 / $scale);
+        $srcW = (int) ($targetWidth / $scale);
+        $srcH = (int) ($targetHeight / $scale);
+
+        imagecopyresampled($canvas, $source, 0, 0, $srcX, $srcY, $targetWidth, $targetHeight, $srcW, $srcH);
+
+        return $canvas;
     }
 
     /**

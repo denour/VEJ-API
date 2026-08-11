@@ -51,7 +51,7 @@ return [
         ],
         'openai' => [
             'api_key' => env('OPENAI_API_KEY'),
-            'model' => env('OPENAI_IMAGE_MODEL', 'gpt-image-1'),
+            'model' => env('OPENAI_IMAGE_MODEL', 'gpt-image-2'),
         ],
         'mock' => [
             'task_id' => env('MOCK_BANANA_TASK_ID', '6cf7ba74ee3e25a08b161392444af4222345'),

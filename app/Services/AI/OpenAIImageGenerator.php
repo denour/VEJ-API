@@ -11,7 +11,7 @@ class OpenAIImageGenerator implements ImageGeneratorInterface
 {
     public function __construct(
         private readonly ?string $apiKey = null,
-        private readonly string $model = 'gpt-image-1',
+        private readonly string $model = 'gpt-image-2',
     ) {}
 
     public function generate(string $prompt, array $options = []): string

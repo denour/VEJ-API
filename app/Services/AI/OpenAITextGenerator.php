@@ -21,19 +21,21 @@ class OpenAITextGenerator implements TextGeneratorInterface
         $response = Http::withHeaders([
             'Authorization' => "Bearer {$this->apiKey}",
             'Content-Type' => 'application/json',
-        ])->timeout(120)->retry(2, 500, throw: false)->post('https://api.openai.com/v1/chat/completions', [
-            'model' => $options['model'] ?? $this->model,
-            'messages' => [
-                [
-                    'role' => 'system',
-                    'content' => $options['system'] ?? 'Eres un experto en jardinería y plantas que crea contenido educativo y atractivo.',
+        ])->timeout($options['timeout'] ?? 120)
+            ->retry($options['attempts'] ?? 2, 500, throw: false)
+            ->post('https://api.openai.com/v1/chat/completions', [
+                'model' => $options['model'] ?? $this->model,
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => $options['system'] ?? 'Eres un experto en jardinería y plantas que crea contenido educativo y atractivo.',
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => $prompt,
+                    ],
                 ],
-                [
-                    'role' => 'user',
-                    'content' => $prompt,
-                ],
-            ],
-        ]);
+            ]);
 
         if (! $response->successful()) {
             throw new \RuntimeException("OpenAI API error: {$response->body()}");

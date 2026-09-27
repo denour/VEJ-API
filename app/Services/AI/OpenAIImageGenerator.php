@@ -34,13 +34,15 @@ class OpenAIImageGenerator implements ImageGeneratorInterface
         $response = Http::withHeaders([
             'Authorization' => "Bearer {$this->apiKey}",
             'Content-Type' => 'application/json',
-        ])->timeout(180)->retry(2, 1000, throw: false)->post('https://api.openai.com/v1/images/generations', [
-            'model' => $model,
-            'prompt' => $prompt,
-            'size' => $size,
-            'quality' => $quality,
-            'n' => 1,
-        ]);
+        ])->timeout($options['timeout'] ?? 180)
+            ->retry($options['attempts'] ?? 2, 1000, throw: false)
+            ->post('https://api.openai.com/v1/images/generations', [
+                'model' => $model,
+                'prompt' => $prompt,
+                'size' => $size,
+                'quality' => $quality,
+                'n' => 1,
+            ]);
 
         if (! $response->successful()) {
             throw new \RuntimeException("OpenAI Image API error: {$response->body()}");
@@ -52,7 +54,7 @@ class OpenAIImageGenerator implements ImageGeneratorInterface
         if ($imageB64) {
             $imageContent = base64_decode($imageB64);
         } elseif ($imageUrl) {
-            $imageContent = Http::timeout(120)->get($imageUrl)->body();
+            $imageContent = Http::timeout($options['download_timeout'] ?? 120)->get($imageUrl)->body();
         } else {
             throw new \RuntimeException('OpenAI returned no image data');
         }
@@ -91,9 +93,15 @@ class OpenAIImageGenerator implements ImageGeneratorInterface
     private function getSize(array $options): string
     {
         $aspectRatio = $options['aspectRatio'] ?? null;
+        $model = $options['model'] ?? $this->model;
+        $supportsFourByFive = is_string($model) && str_starts_with($model, 'gpt-image-2');
 
         if ($aspectRatio === '16:9' || $aspectRatio === '4:3') {
             return '1536x1024';
+        }
+
+        if ($aspectRatio === '4:5') {
+            return $supportsFourByFive ? '1024x1280' : '1024x1536';
         }
 
         if ($aspectRatio === '9:16' || $aspectRatio === '3:4') {
@@ -108,6 +116,10 @@ class OpenAIImageGenerator implements ImageGeneratorInterface
         }
 
         if ($height > $width) {
+            if ($supportsFourByFive && abs(($width / $height) - 0.8) < 0.01) {
+                return '1024x1280';
+            }
+
             return '1024x1536';
         }
 

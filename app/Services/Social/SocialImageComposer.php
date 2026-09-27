@@ -3,375 +3,264 @@
 namespace App\Services\Social;
 
 /**
- * Draws the social-media text (hook, category badge, brand) onto a background
- * image using GD + FreeType, so the copy is ALWAYS present and legible.
- *
- * We do this deterministically instead of asking the image model to render the
- * text: gpt-image-1 frequently produced garbled or missing text, leaving cards
- * that looked empty. See SocialMediaPublisher::generateSocialImage().
- *
- * Look is modeled on the very first hand-generated card (2026-07-25, "Jardines
- * sensoriales..."): a rounded translucent card holding a serif headline (lead
- * words bold white, rest bold italic in the brand accent color), a rounded
- * pill category badge, and the real brand lockup as a watermark.
+ * Composes a portrait social image with deterministic editorial typography.
  */
 class SocialImageComposer
 {
-    private const FONT_HEADLINE_BOLD = 'fonts/PlayfairDisplay-Bold.ttf';
+    private const WIDTH = 1080;
 
-    private const FONT_HEADLINE_ITALIC = 'fonts/PlayfairDisplay-BoldItalic.ttf';
+    private const HEIGHT = 1350;
 
-    private const FONT_LABEL = 'fonts/DejaVuSans-Bold.ttf';
+    private const IVORY = [247, 241, 222];
+
+    private const PEACH = [240, 176, 132];
+
+    private const FOREST = [23, 42, 28];
+
+    private const FONT_HEADLINE = 'fonts/PlayfairDisplay-Bold.ttf';
+
+    private const FONT_ACCENT = 'fonts/PlayfairDisplay-BoldItalic.ttf';
+
+    private const FONT_CATEGORY = 'fonts/DejaVuSans-Bold.ttf';
 
     private const BRAND_LOGO = 'images/brand-logo.png';
 
-    private const ACCENT_COLOR = [240, 190, 155];
-
-    private const CARD_COLOR = [22, 34, 20];
-
-    private const BRAND_GREEN = [34, 108, 62];
-
     /**
-     * Instagram feed favors 4:5 portrait over square — it claims more of the
-     * screen and reads better in-feed. Facebook renders 4:5 fine too, so we
-     * use one target size for both platforms.
+     * @param  string  $backgroundBytes  Raw PNG or JPEG bytes.
+     * @return string Raw PNG bytes of the finished card.
      */
-    private const CANVAS_WIDTH = 1080;
-
-    private const CANVAS_HEIGHT = 1350;
-
-    /**
-     * Overlay the hook, category badge and brand watermark on the background.
-     * The background is cropped-to-fill the target canvas (like CSS
-     * object-fit: cover), so any source aspect ratio works.
-     *
-     * @param  string  $backgroundPng  Raw PNG/JPEG bytes of the background image.
-     * @return string Raw PNG bytes of the composited card.
-     */
-    public function overlay(string $backgroundPng, string $hook, string $category): string
+    public function overlay(string $backgroundBytes, string $hook, string $category, string $accent = ''): string
     {
-        // Silence GD's warning on bad data; we handle the false return ourselves.
-        $source = @imagecreatefromstring($backgroundPng);
+        $source = @imagecreatefromstring($backgroundBytes);
 
         if ($source === false) {
             throw new \RuntimeException('Could not decode background image for social overlay.');
         }
 
-        $width = self::CANVAS_WIDTH;
-        $height = self::CANVAS_HEIGHT;
-
-        $image = $this->coverCrop($source, $width, $height);
+        $image = $this->coverCrop($source);
         imagedestroy($source);
 
+        return $this->render($image, $hook, $category, $accent);
+    }
+
+    /**
+     * Branded last resort when neither a portrait nor the post cover can be used.
+     *
+     * @return string Raw PNG bytes of the finished card.
+     */
+    public function forestFallback(string $hook, string $category, string $accent = ''): string
+    {
+        $image = imagecreatetruecolor(self::WIDTH, self::HEIGHT);
+        imagefill($image, 0, 0, imagecolorallocate($image, ...self::FOREST));
+
+        return $this->render($image, $hook, $category, $accent);
+    }
+
+    private function render(\GdImage $image, string $hook, string $category, string $accent): string
+    {
         imagealphablending($image, true);
         imagesavealpha($image, true);
 
-        $badgeBottom = $this->drawCategoryBadge($image, $category, $width, $height);
-        $this->drawHook($image, $hook, $width, $height, $badgeBottom);
-        $this->drawBrandWatermark($image, $width, $height);
+        $this->drawTopGradient($image);
+        $this->drawBottomScrim($image);
+        $this->drawCategory($image, $category);
+        $this->drawHook($image, $hook, $accent);
+        $this->drawBrandLogo($image);
 
         ob_start();
         imagepng($image);
         $png = (string) ob_get_clean();
-
         imagedestroy($image);
 
         return $png;
     }
 
-    /**
-     * Resize+crop $source to exactly fill a $targetWidth x $targetHeight
-     * canvas without distortion (equivalent to CSS object-fit: cover).
-     *
-     * @param  \GdImage  $source
-     * @return \GdImage
-     */
-    private function coverCrop($source, int $targetWidth, int $targetHeight)
+    private function coverCrop(\GdImage $source): \GdImage
     {
         $sourceWidth = imagesx($source);
         $sourceHeight = imagesy($source);
+        $scale = max(self::WIDTH / $sourceWidth, self::HEIGHT / $sourceHeight);
+        $cropWidth = (int) round(self::WIDTH / $scale);
+        $cropHeight = (int) round(self::HEIGHT / $scale);
+        $cropX = (int) floor(($sourceWidth - $cropWidth) / 2);
+        $cropY = (int) floor(($sourceHeight - $cropHeight) / 2);
 
-        $scale = max($targetWidth / $sourceWidth, $targetHeight / $sourceHeight);
-        $scaledWidth = (int) ceil($sourceWidth * $scale);
-        $scaledHeight = (int) ceil($sourceHeight * $scale);
+        $image = imagecreatetruecolor(self::WIDTH, self::HEIGHT);
+        imagecopyresampled(
+            $image, $source, 0, 0, $cropX, $cropY,
+            self::WIDTH, self::HEIGHT, $cropWidth, $cropHeight,
+        );
 
-        $canvas = imagecreatetruecolor($targetWidth, $targetHeight);
-        imagealphablending($canvas, true);
-        imagesavealpha($canvas, true);
-
-        $srcX = (int) (($scaledWidth - $targetWidth) / 2 / $scale);
-        $srcY = (int) (($scaledHeight - $targetHeight) / 2 / $scale);
-        $srcW = (int) ($targetWidth / $scale);
-        $srcH = (int) ($targetHeight / $scale);
-
-        imagecopyresampled($canvas, $source, 0, 0, $srcX, $srcY, $targetWidth, $targetHeight, $srcW, $srcH);
-
-        return $canvas;
+        return $image;
     }
 
-    /**
-     * The hook inside a rounded translucent card: the first couple of words in
-     * bold serif white (the "lead"), the rest in bold italic serif accent color.
-     * Both wrap independently and stack top-to-bottom, left-aligned.
-     *
-     * @param  \GdImage  $image
-     */
-    private function drawHook($image, string $hook, int $width, int $height, int $top): void
+    private function drawTopGradient(\GdImage $image): void
     {
-        $hook = trim(preg_replace('/\s+/', ' ', $hook) ?? '');
+        for ($y = 0; $y < 690; $y += 6) {
+            $vertical = 1 - ($y / 690);
+
+            for ($x = 0; $x < 930; $x += 6) {
+                $horizontal = 1 - ($x / 930);
+                $opacity = (int) round(108 * $horizontal * $vertical);
+
+                if ($opacity < 2) {
+                    continue;
+                }
+
+                $color = imagecolorallocatealpha(
+                    $image, self::FOREST[0], self::FOREST[1], self::FOREST[2], 127 - $opacity,
+                );
+                imagefilledrectangle($image, $x, $y, min($x + 5, 929), min($y + 5, 689), $color);
+            }
+        }
+    }
+
+    private function drawBottomScrim(\GdImage $image): void
+    {
+        for ($y = 1030; $y < self::HEIGHT; $y += 6) {
+            $vertical = min(1, ($y - 1030) / 145);
+
+            for ($x = 0; $x < 760; $x += 6) {
+                $horizontal = $x < 430 ? 1 : max(0, (760 - $x) / 330);
+                $opacity = (int) round(78 * $vertical * $horizontal);
+
+                if ($opacity < 2) {
+                    continue;
+                }
+
+                $color = imagecolorallocatealpha(
+                    $image, self::FOREST[0], self::FOREST[1], self::FOREST[2], 127 - $opacity,
+                );
+                imagefilledrectangle($image, $x, $y, min($x + 5, 759), min($y + 5, self::HEIGHT - 1), $color);
+            }
+        }
+    }
+
+    private function drawCategory(\GdImage $image, string $category): void
+    {
+        $category = mb_strtoupper($this->normalizeText($category));
+
+        if ($category === '') {
+            return;
+        }
+
+        $font = $this->resourcePath(self::FONT_CATEGORY);
+        $size = 16;
+        $tracking = 3;
+        $original = $category;
+
+        while ($this->trackedWidth($category, $font, $size, $tracking) > 900) {
+            $category = mb_substr($category, 0, -1);
+        }
+
+        if ($category !== $original) {
+            while ($this->trackedWidth($category.'…', $font, $size, $tracking) > 900) {
+                $category = mb_substr($category, 0, -1);
+            }
+
+            $category = rtrim($category).'…';
+        }
+
+        $color = imagecolorallocate($image, ...self::IVORY);
+        $x = 72;
+
+        foreach (mb_str_split($category) as $character) {
+            imagettftext($image, $size, 0, $x, 93, $color, $font, $character);
+            $x += $this->textWidth($character, $font, $size) + $tracking;
+        }
+    }
+
+    private function drawHook(\GdImage $image, string $hook, string $accent): void
+    {
+        $hook = $this->normalizeText($hook);
 
         if ($hook === '') {
             return;
         }
 
-        $margin = (int) ($width * 0.06);
-        $padding = (int) ($width * 0.05);
-        $maxTextWidth = min((int) ($width * 0.56), $width - (2 * $margin) - (2 * $padding));
+        $accent = $this->normalizeText($accent);
+        $hasAccent = $accent !== '' && mb_strlen($accent) < mb_strlen($hook)
+            && (bool) preg_match('/\s'.preg_quote($accent, '/').'$/iu', $hook);
+        $lead = $hasAccent ? trim(mb_substr($hook, 0, mb_strlen($hook) - mb_strlen($accent))) : $hook;
+        $accent = $hasAccent ? mb_substr($hook, -mb_strlen($accent)) : '';
 
-        $boldFont = $this->resourcePath(self::FONT_HEADLINE_BOLD);
-        $italicFont = $this->resourcePath(self::FONT_HEADLINE_ITALIC);
+        $headlineFont = $this->resourcePath(self::FONT_HEADLINE);
+        $accentFont = $this->resourcePath(self::FONT_ACCENT);
+        $maxWidth = 650;
+        $leadLines = [];
+        $accentLines = [];
 
-        [$lead, $accent] = $this->splitHook($hook);
+        for ($size = 76; $size >= 36; $size -= 2) {
+            $leadLines = $this->wrapText($lead, $headlineFont, $size, $maxWidth);
+            $accentLines = $accent !== '' ? $this->wrapText($accent, $accentFont, $size, $maxWidth) : [];
 
-        $fontSize = (int) ($width * 0.072);
-
-        do {
-            $leadLines = $lead !== '' ? $this->wrapText($lead, $boldFont, $fontSize, $maxTextWidth) : [];
-            $accentLines = $accent !== '' ? $this->wrapText($accent, $italicFont, $fontSize, $maxTextWidth) : [];
-            $totalLines = count($leadLines) + count($accentLines);
-            $fontSize -= 4;
-        } while ($totalLines > 5 && $fontSize > 22);
-
-        $fontSize += 4;
-        $lineHeight = (int) ($fontSize * 1.25);
-
-        $allLines = array_merge(
-            array_map(fn (string $l) => ['text' => $l, 'font' => $boldFont, 'color' => [255, 255, 255]], $leadLines),
-            array_map(fn (string $l) => ['text' => $l, 'font' => $italicFont, 'color' => self::ACCENT_COLOR], $accentLines),
-        );
-
-        if ($allLines === []) {
-            return;
+            if (count($leadLines) + count($accentLines) <= 3) {
+                break;
+            }
         }
 
-        $blockWidth = 0;
-        foreach ($allLines as $line) {
-            $box = imagettfbbox($fontSize, 0, $line['font'], $line['text']);
-            $blockWidth = max($blockWidth, $box[2] - $box[0]);
+        if (count($leadLines) + count($accentLines) > 3) {
+            $leadLimit = $accentLines === [] ? 3 : max(1, 3 - min(2, count($accentLines)));
+            $leadLines = $this->limitLines($leadLines, $leadLimit, $headlineFont, $size, $maxWidth);
+            $accentLines = $this->limitLines($accentLines, 3 - count($leadLines), $accentFont, $size, $maxWidth);
         }
 
-        $cardX0 = $margin;
-        $cardY0 = max($top, (int) ($height * 0.12));
-        $cardX1 = min($width - $margin, $cardX0 + $blockWidth + (2 * $padding));
-        $cardY1 = $cardY0 + (2 * $padding) + ($lineHeight * count($allLines));
+        $lineHeight = (int) round($size * 1.15);
+        $baseline = 215;
+        $ivory = imagecolorallocate($image, ...self::IVORY);
+        $peach = imagecolorallocate($image, ...self::PEACH);
 
-        $cardColor = imagecolorallocatealpha(
-            $image,
-            self::CARD_COLOR[0],
-            self::CARD_COLOR[1],
-            self::CARD_COLOR[2],
-            40,
-        );
-        $this->roundedRect($image, $cardX0, $cardY0, $cardX1, $cardY1, (int) ($width * 0.035), $cardColor);
+        foreach ($leadLines as $line) {
+            imagettftext($image, $size, 0, 72, $baseline, $ivory, $headlineFont, $line);
+            $baseline += $lineHeight;
+        }
 
-        $textX = $cardX0 + $padding;
-        $textY = $cardY0 + $padding + (int) ($fontSize * 0.9);
-
-        foreach ($allLines as $i => $line) {
-            $color = imagecolorallocate($image, ...$line['color']);
-            imagettftext($image, $fontSize, 0, $textX, $textY + ($i * $lineHeight), $color, $line['font'], $line['text']);
+        foreach ($accentLines as $line) {
+            imagettftext($image, $size, 0, 72, $baseline, $peach, $accentFont, $line);
+            $baseline += $lineHeight;
         }
     }
 
     /**
-     * Split the hook into a short bold "lead" and the remaining italic accent
-     * phrase, mirroring the reference card (e.g. "Jardines sensoriales" / "que
-     * cuidan tu movilidad en casa").
-     *
-     * @return array{0: string, 1: string}
-     */
-    private function splitHook(string $hook): array
-    {
-        $words = preg_split('/\s+/', $hook) ?: [];
-        $leadWordCount = count($words) > 3 ? 2 : 1;
-
-        if (count($words) <= $leadWordCount) {
-            return [$hook, ''];
-        }
-
-        $lead = implode(' ', array_slice($words, 0, $leadWordCount));
-        $accent = implode(' ', array_slice($words, $leadWordCount));
-
-        return [$lead, $accent];
-    }
-
-    /**
-     * Category badge: a rounded pill in the top-left corner with a small leaf
-     * icon and the label. Returns the badge's bottom y so the hook card can
-     * start below it without overlapping.
-     *
-     * @param  \GdImage  $image
-     */
-    private function drawCategoryBadge($image, string $category, int $width, int $height): int
-    {
-        $category = trim($category);
-        $margin = (int) ($width * 0.06);
-
-        if ($category === '') {
-            return $margin;
-        }
-
-        $label = mb_strtoupper($category);
-        $font = $this->resourcePath(self::FONT_LABEL);
-        $fontSize = (int) ($width * 0.024);
-        $iconDiameter = (int) ($fontSize * 2.4);
-        $padY = (int) ($fontSize * 0.75);
-        $padX = (int) ($fontSize * 0.9);
-        $gap = (int) ($fontSize * 0.6);
-
-        $box = imagettfbbox($fontSize, 0, $font, $label);
-        $textWidth = $box[2] - $box[0];
-        $textHeight = $box[1] - $box[7];
-
-        $pillHeight = max($iconDiameter, $textHeight) + (2 * $padY);
-        $pillWidth = $padX + $iconDiameter + $gap + $textWidth + $padX;
-
-        $x0 = $margin;
-        $y0 = $margin;
-        $x1 = $x0 + $pillWidth;
-        $y1 = $y0 + $pillHeight;
-
-        $pill = imagecolorallocatealpha($image, self::BRAND_GREEN[0], self::BRAND_GREEN[1], self::BRAND_GREEN[2], 15);
-        $this->roundedRect($image, $x0, $y0, $x1, $y1, (int) ($pillHeight / 2), $pill);
-
-        $iconCx = $x0 + $padX + (int) ($iconDiameter / 2);
-        $iconCy = $y0 + (int) ($pillHeight / 2);
-        $white = imagecolorallocate($image, 255, 255, 255);
-        imagefilledellipse($image, $iconCx, $iconCy, $iconDiameter, $iconDiameter, $white);
-        $this->drawLeafGlyph($image, $iconCx, $iconCy, (int) ($iconDiameter * 0.55));
-
-        $textX = $x0 + $padX + $iconDiameter + $gap;
-        $textY = $y0 + (int) (($pillHeight + $textHeight) / 2);
-        imagettftext($image, $fontSize, 0, $textX, $textY, $white, $font, $label);
-
-        return $y1;
-    }
-
-    /**
-     * A minimal two-leaflet glyph, brand green, centered at ($cx, $cy): two
-     * tapered ovals angled outward from a shared base, like the brand icon.
-     *
-     * @param  \GdImage  $image
-     */
-    private function drawLeafGlyph($image, int $cx, int $cy, int $size): void
-    {
-        $green = imagecolorallocate($image, self::BRAND_GREEN[0], self::BRAND_GREEN[1], self::BRAND_GREEN[2]);
-        $baseY = $cy + (int) ($size * 0.4);
-
-        $this->filledLeaf($image, $cx, $baseY, $size, -35, $green);
-        $this->filledLeaf($image, $cx, $baseY, $size, 35, $green);
-    }
-
-    /**
-     * A single tapered leaf: a teardrop polygon anchored at ($baseX, $baseY),
-     * pointing away at $angleDegrees from straight up.
-     *
-     * @param  \GdImage  $image
-     */
-    private function filledLeaf($image, int $baseX, int $baseY, int $length, float $angleDegrees, int $color): void
-    {
-        $angle = deg2rad($angleDegrees - 90);
-        $tipX = $baseX + (int) (cos($angle) * $length);
-        $tipY = $baseY + (int) (sin($angle) * $length);
-        $perp = $angle + M_PI_2;
-        $bulge = $length * 0.32;
-
-        $midX = ($baseX + $tipX) / 2;
-        $midY = ($baseY + $tipY) / 2;
-
-        $points = [
-            $baseX, $baseY,
-            (int) ($midX + cos($perp) * $bulge), (int) ($midY + sin($perp) * $bulge),
-            $tipX, $tipY,
-            (int) ($midX - cos($perp) * $bulge), (int) ($midY - sin($perp) * $bulge),
-        ];
-
-        imagefilledpolygon($image, $points, $color);
-    }
-
-    /**
-     * Brand watermark: the real lockup (icon + wordmark) from
-     * resources/images/brand-logo.png, bottom-right, alpha-composited.
-     *
-     * @param  \GdImage  $image
-     */
-    private function drawBrandWatermark($image, int $width, int $height): void
-    {
-        $logoPath = $this->resourcePath(self::BRAND_LOGO);
-
-        if (! is_file($logoPath)) {
-            return;
-        }
-
-        $logo = @imagecreatefrompng($logoPath);
-
-        if ($logo === false) {
-            return;
-        }
-
-        imagealphablending($logo, false);
-        imagesavealpha($logo, true);
-
-        $logoWidth = imagesx($logo);
-        $logoHeight = imagesy($logo);
-
-        $targetWidth = (int) ($width * 0.34);
-        $targetHeight = (int) ($targetWidth * ($logoHeight / $logoWidth));
-
-        $margin = (int) ($width * 0.05);
-        $x = $width - $targetWidth - $margin;
-        $y = $height - $targetHeight - $margin;
-
-        imagecopyresampled($image, $logo, $x, $y, 0, 0, $targetWidth, $targetHeight, $logoWidth, $logoHeight);
-        imagedestroy($logo);
-    }
-
-    /**
-     * Fill a rounded rectangle: a body rectangle plus four corner circles, all
-     * in the given (possibly translucent) color. GD has no native primitive.
-     *
-     * @param  \GdImage  $image
-     */
-    private function roundedRect($image, int $x0, int $y0, int $x1, int $y1, int $radius, int $color): void
-    {
-        $radius = min($radius, (int) (($x1 - $x0) / 2), (int) (($y1 - $y0) / 2));
-
-        imagefilledrectangle($image, $x0 + $radius, $y0, $x1 - $radius, $y1, $color);
-        imagefilledrectangle($image, $x0, $y0 + $radius, $x1, $y1 - $radius, $color);
-
-        imagefilledellipse($image, $x0 + $radius, $y0 + $radius, $radius * 2, $radius * 2, $color);
-        imagefilledellipse($image, $x1 - $radius, $y0 + $radius, $radius * 2, $radius * 2, $color);
-        imagefilledellipse($image, $x0 + $radius, $y1 - $radius, $radius * 2, $radius * 2, $color);
-        imagefilledellipse($image, $x1 - $radius, $y1 - $radius, $radius * 2, $radius * 2, $color);
-    }
-
-    /**
-     * Greedily wrap text to fit within a pixel width for the given font/size.
-     *
      * @return list<string>
      */
-    private function wrapText(string $text, string $font, int $fontSize, int $maxWidth): array
+    private function wrapText(string $text, string $font, int $size, int $maxWidth): array
     {
-        $words = preg_split('/\s+/', $text) ?: [];
+        if ($text === '') {
+            return [];
+        }
+
         $lines = [];
         $current = '';
 
-        foreach ($words as $word) {
-            $candidate = $current === '' ? $word : "{$current} {$word}";
-            $box = imagettfbbox($fontSize, 0, $font, $candidate);
-            $candidateWidth = $box[2] - $box[0];
+        foreach (preg_split('/\s+/u', $text) ?: [] as $word) {
+            while ($this->textWidth($word, $font, $size) > $maxWidth) {
+                $part = '';
 
-            if ($candidateWidth > $maxWidth && $current !== '') {
+                foreach (mb_str_split($word) as $character) {
+                    if ($part !== '' && $this->textWidth($part.$character, $font, $size) > $maxWidth) {
+                        break;
+                    }
+
+                    $part .= $character;
+                }
+
+                if ($current !== '') {
+                    $lines[] = $current;
+                    $current = '';
+                }
+
+                $lines[] = $part;
+                $word = mb_substr($word, mb_strlen($part));
+            }
+
+            if ($word === '') {
+                continue;
+            }
+
+            $candidate = $current === '' ? $word : $current.' '.$word;
+
+            if ($current !== '' && $this->textWidth($candidate, $font, $size) > $maxWidth) {
                 $lines[] = $current;
                 $current = $word;
             } else {
@@ -386,10 +275,112 @@ class SocialImageComposer
         return $lines;
     }
 
+    /**
+     * @param  list<string>  $lines
+     * @return list<string>
+     */
+    private function limitLines(array $lines, int $limit, string $font, int $size, int $maxWidth): array
+    {
+        if ($limit <= 0) {
+            return [];
+        }
+
+        if (count($lines) <= $limit) {
+            return $lines;
+        }
+
+        $visible = array_slice($lines, 0, $limit);
+        $visible[$limit - 1] = $this->truncateToWidth($visible[$limit - 1].'…', $font, $size, $maxWidth);
+
+        return $visible;
+    }
+
+    private function truncateToWidth(string $text, string $font, int $size, int $maxWidth): string
+    {
+        if ($this->textWidth($text, $font, $size) <= $maxWidth) {
+            return $text;
+        }
+
+        if (str_ends_with($text, '…')) {
+            $text = mb_substr($text, 0, -1);
+        }
+
+        while ($text !== '' && $this->textWidth($text.'…', $font, $size) > $maxWidth) {
+            $text = mb_substr($text, 0, -1);
+        }
+
+        return rtrim($text).'…';
+    }
+
+    private function textWidth(string $text, string $font, int $size): int
+    {
+        $box = imagettfbbox($size, 0, $font, $text);
+
+        return $box[2] - $box[0];
+    }
+
+    private function trackedWidth(string $text, string $font, int $size, int $tracking): int
+    {
+        $width = 0;
+
+        foreach (mb_str_split($text) as $character) {
+            $width += $this->textWidth($character, $font, $size) + $tracking;
+        }
+
+        return $width;
+    }
+
+    private function normalizeText(string $text): string
+    {
+        return trim(preg_replace('/\s+/u', ' ', $text) ?? '');
+    }
+
+    private function drawBrandLogo(\GdImage $image): void
+    {
+        $logo = @imagecreatefrompng($this->resourcePath(self::BRAND_LOGO));
+
+        if ($logo === false) {
+            throw new \RuntimeException('Could not load the original brand logo.');
+        }
+
+        $cropX = 218;
+        $cropY = 394;
+        $cropWidth = 610;
+        $cropHeight = 212;
+        $mark = imagecreatetruecolor($cropWidth, $cropHeight);
+        imagealphablending($mark, false);
+        imagesavealpha($mark, true);
+        imagefill($mark, 0, 0, imagecolorallocatealpha($mark, 0, 0, 0, 127));
+
+        for ($y = 0; $y < $cropHeight; $y++) {
+            for ($x = 0; $x < $cropWidth; $x++) {
+                $pixel = imagecolorsforindex($logo, imagecolorat($logo, $cropX + $x, $cropY + $y));
+
+                if ($pixel['red'] < 75 || $pixel['red'] < $pixel['green'] || $pixel['green'] <= $pixel['blue']) {
+                    continue;
+                }
+
+                $opacity = min(127, (int) round(($pixel['red'] - 65) * 127 / 170));
+                $color = imagecolorallocatealpha(
+                    $mark, $pixel['red'], $pixel['green'], $pixel['blue'], 127 - $opacity,
+                );
+                imagesetpixel($mark, $x, $y, $color);
+            }
+        }
+
+        $targetWidth = 305;
+        $targetHeight = (int) round($targetWidth * $cropHeight / $cropWidth);
+        imagecopyresampled(
+            $image, $mark, 64, self::HEIGHT - $targetHeight - 65, 0, 0,
+            $targetWidth, $targetHeight, $cropWidth, $cropHeight,
+        );
+
+        imagedestroy($mark);
+        imagedestroy($logo);
+    }
+
     private function resourcePath(string $relative): string
     {
-        // Resolve relative to the app root without the Laravel container, so the
-        // composer stays usable from plain unit tests. app/Services/Social → base.
         return dirname(__DIR__, 3).'/resources/'.$relative;
     }
 }

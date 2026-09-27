@@ -132,10 +132,11 @@ class SocialMediaPublisherTest extends TestCase
         $this->assertGreaterThan(3, substr_count($caption, '#'));
     }
 
-    public function test_social_slides_hero_uses_post_cover_as_background(): void
+    public function test_async_social_hero_uses_the_existing_cover_without_requesting_a_task(): void
     {
-        // With a cover present the model must NOT be called — the cover is the bg.
+        // Async generation returns a task ID, so use the completed cover instead.
         $imageMock = $this->createMock(ImageGeneratorInterface::class);
+        $imageMock->method('isSynchronous')->willReturn(false);
         $imageMock->expects($this->never())->method('generate');
 
         $post = $this->samplePost();
@@ -152,6 +153,129 @@ class SocialMediaPublisherTest extends TestCase
         // the `blocks` relation → hero only.
         $this->assertCount(1, $slides);
         $this->assertStringContainsString('social/card-', $slides[0]);
+    }
+
+    public function test_social_hero_requests_a_portrait_even_when_the_blog_has_a_cover(): void
+    {
+        $image = $this->createMock(ImageGeneratorInterface::class);
+        $image->method('isSynchronous')->willReturn(true);
+        $image->expects($this->once())->method('generate')
+            ->with($this->callback(fn (string $prompt): bool => str_contains($prompt, 'NO text')),
+                $this->callback(fn (array $options): bool => ($options['aspectRatio'] ?? null) === '4:5'))
+            ->willReturn('https://cdn.example.com/social/portrait.png');
+        $post = $this->samplePost();
+        $post->cover_image = 'https://cdn.example.com/covers/blog.png';
+        \Illuminate\Support\Facades\Storage::fake('s3');
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+        \Illuminate\Support\Facades\Http::fake([
+            'https://cdn.example.com/social/portrait.png' => \Illuminate\Support\Facades\Http::response($this->solidPng()),
+        ]);
+
+        $slides = $this->invoke($this->publisher(null, $image), 'generateSocialSlides', $post, 'Tu balcón también puede florecer', [], 'florecer');
+
+        $this->assertCount(1, $slides);
+        $this->assertStringContainsString('social/card-', $slides[0]);
+        $this->assertSame('https://cdn.example.com/covers/blog.png', $post->cover_image);
+        \Illuminate\Support\Facades\Http::assertSent(fn ($request): bool => $request->url() === 'https://cdn.example.com/social/portrait.png');
+    }
+
+    public function test_failed_portrait_generation_keeps_a_composed_cover(): void
+    {
+        $image = $this->createMock(ImageGeneratorInterface::class);
+        $image->method('isSynchronous')->willReturn(true);
+        $image->expects($this->once())->method('generate')->willThrowException(new \RuntimeException('Generation unavailable'));
+        $post = $this->samplePost();
+        $post->cover_image = 'https://cdn.example.com/covers/blog.png';
+        \Illuminate\Support\Facades\Storage::fake('s3');
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+        \Illuminate\Support\Facades\Http::fake([
+            'https://cdn.example.com/covers/blog.png' => \Illuminate\Support\Facades\Http::response($this->solidPng()),
+        ]);
+
+        $slides = $this->invoke($this->publisher(null, $image), 'generateSocialSlides', $post, 'Tu balcón también puede florecer', []);
+
+        $this->assertCount(1, $slides);
+        $this->assertStringContainsString('social/card-', $slides[0]);
+        \Illuminate\Support\Facades\Http::assertSent(fn ($request): bool => $request->url() === $post->cover_image);
+    }
+
+    public function test_social_generation_limits_external_request_time(): void
+    {
+        $textOptions = [];
+        $imageOptions = [];
+        $text = $this->createMock(TextGeneratorInterface::class);
+        $text->method('generate')->willReturnCallback(function (string $prompt, array $options) use (&$textOptions): string {
+            $textOptions = $options;
+
+            return self::COPY_JSON;
+        });
+        $image = $this->createMock(ImageGeneratorInterface::class);
+        $image->method('isSynchronous')->willReturn(true);
+        $image->method('generate')->willReturnCallback(function (string $prompt, array $options) use (&$imageOptions): string {
+            $imageOptions = $options;
+
+            return 'https://cdn.example.com/social/portrait.png';
+        });
+        \Illuminate\Support\Facades\Storage::fake('s3');
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+        \Illuminate\Support\Facades\Http::fake([
+            'https://cdn.example.com/social/portrait.png' => \Illuminate\Support\Facades\Http::response($this->solidPng()),
+        ]);
+        $publisher = $this->publisher($text, $image);
+        $post = $this->samplePost();
+        $copy = $this->invoke($publisher, 'generateSocialCopy', $post);
+        $slides = $this->invoke($publisher, 'generateSocialSlides', $post, $copy['social_hook'], []);
+
+        $this->assertCount(1, $slides);
+        $this->assertSame(30, $textOptions['timeout'] ?? null);
+        $this->assertSame(1, $textOptions['attempts'] ?? null);
+        $this->assertSame(120, $imageOptions['timeout'] ?? null);
+        $this->assertSame(1, $imageOptions['attempts'] ?? null);
+        $this->assertSame(10, $imageOptions['download_timeout'] ?? null);
+    }
+
+    public function test_async_provider_without_cover_never_publishes_a_task_id(): void
+    {
+        $image = $this->createMock(ImageGeneratorInterface::class);
+        $image->method('isSynchronous')->willReturn(false);
+        $image->expects($this->never())->method('generate');
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+
+        $slides = $this->invoke($this->publisher(null, $image), 'generateSocialSlides', $this->samplePost(), 'Tu balcón puede florecer', []);
+
+        $this->assertSame([], $slides);
+    }
+
+    public function test_malformed_copy_fields_use_safe_article_text(): void
+    {
+        $publisher = $this->publisher($this->textGenerator('{"social_hook":[],"social_hook_accent":[],"fb_body":{},"ig_body":false,"carousel_tips":{}}'));
+        $post = $this->samplePost();
+
+        $copy = $this->invoke($publisher, 'generateSocialCopy', $post);
+
+        $this->assertNotSame('', $copy['social_hook']);
+        $this->assertSame('', $copy['social_hook_accent']);
+        $this->assertSame($post->excerpt, $copy['fb_body']);
+        $this->assertSame($post->excerpt, $copy['ig_body']);
+        $this->assertSame([], $copy['carousel_tips']);
+    }
+
+    public function test_failed_card_storage_never_returns_a_raw_photo(): void
+    {
+        $post = $this->samplePost();
+        $post->cover_image = 'https://cdn.example.com/covers/blog.png';
+        $image = $this->createMock(ImageGeneratorInterface::class);
+        $image->method('isSynchronous')->willReturn(true);
+        $image->method('generate')->willReturn('https://cdn.example.com/social/portrait.png');
+        \Illuminate\Support\Facades\Http::preventStrayRequests();
+        \Illuminate\Support\Facades\Http::fake(fn () => \Illuminate\Support\Facades\Http::response($this->solidPng()));
+        $disk = \Mockery::mock(\Illuminate\Contracts\Filesystem\Filesystem::class);
+        $disk->shouldReceive('put')->times(3)->andReturn(false);
+        \Illuminate\Support\Facades\Storage::shouldReceive('disk')->with('s3')->andReturn($disk);
+
+        $slides = $this->invoke($this->publisher(null, $image), 'generateSocialSlides', $post, 'Tu balcón puede florecer', []);
+
+        $this->assertSame([], $slides);
     }
 
     public function test_social_image_prompt_forbids_ai_rendered_text(): void
@@ -183,7 +307,7 @@ class SocialMediaPublisherTest extends TestCase
         $this->assertStringContainsString('social/card-', $slides[0]);
     }
 
-    public function test_social_slides_hero_falls_back_to_background_when_overlay_fails(): void
+    public function test_social_slides_hero_keeps_branding_when_background_is_invalid(): void
     {
         $imageMock = $this->createMock(ImageGeneratorInterface::class);
         $imageMock->method('isSynchronous')->willReturn(true);
@@ -191,14 +315,15 @@ class SocialMediaPublisherTest extends TestCase
         $imageMock->method('generate')->willReturn('https://cdn.example.com/social/bg.png');
 
         \Illuminate\Support\Facades\Storage::fake('s3');
-        // Non-image bytes → the composer throws → we fall back to the background URL.
+        // An invalid image must never be published as the final social card.
         \Illuminate\Support\Facades\Http::fake([
             'https://cdn.example.com/*' => \Illuminate\Support\Facades\Http::response('not-an-image'),
         ]);
 
         $slides = $this->invoke($this->publisher(null, $imageMock), 'generateSocialSlides', $this->samplePost(), 'Tu balcon puede ser un jardin', []);
 
-        $this->assertSame(['https://cdn.example.com/social/bg.png'], $slides);
+        $this->assertCount(1, $slides);
+        $this->assertStringContainsString('social/card-', $slides[0]);
     }
 
     /**

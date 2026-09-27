@@ -28,7 +28,9 @@ class SocialMediaPublisher
         $results = ['facebook' => null, 'instagram' => null];
 
         $copy = $this->generateSocialCopy($post);
-        $slides = $this->generateSocialSlides($post, $copy['social_hook'], $copy['carousel_tips']);
+        $slides = $this->generateSocialSlides(
+            $post, $copy['social_hook'], $copy['carousel_tips'], $copy['social_hook_accent'],
+        );
 
         if ($slides === []) {
             Log::error('No image available for social publishing', ['post_id' => $post->id]);
@@ -61,7 +63,7 @@ class SocialMediaPublisher
     /**
      * Generate platform-tailored social copy in a single AI call.
      *
-     * @return array{social_hook: string, fb_body: string, ig_body: string, carousel_tips: list<string>}
+     * @return array{social_hook: string, social_hook_accent: string, fb_body: string, ig_body: string, carousel_tips: list<string>}
      */
     private function generateSocialCopy(Post $post): array
     {
@@ -79,27 +81,57 @@ RESUMEN: {$excerpt}
 
 Devuelve EXCLUSIVAMENTE JSON válido, sin texto adicional, con esta estructura:
 {
-  "social_hook": "Gancho cortísimo de 5 a 8 palabras para sobreponer en la imagen de portada. Emocional o que despierte curiosidad, NADA de tono SEO. Sin hashtags, sin emoji, sin comillas.",
+  "social_hook": "Gancho de 5 a 8 palabras para la imagen social. Emocional o que despierte curiosidad, NADA de tono SEO. Sin hashtags, sin emoji, sin comillas.",
+  "social_hook_accent": "Última palabra o frase breve y significativa de social_hook para destacar en cursiva. Debe coincidir exactamente con el final del gancho. Si no hay un cierre natural, devuelve una cadena vacía.",
   "fb_body": "Texto para Facebook: 2-3 frases cálidas e informativas que enganchen al lector. En español mexicano. Sin enlaces y sin hashtags (se agregan aparte). Máximo 1 emoji.",
   "ig_body": "Texto para Instagram: cercano y visual, 1-2 frases con 2-4 emoji bien colocados. En español mexicano. Sin enlaces y sin hashtags (se agregan aparte).",
-  "carousel_tips": "Lista de EXACTAMENTE 3 ganchos cortísimos (5 a 8 palabras cada uno), mismo tono que social_hook, cada uno un consejo o dato distinto y concreto del artículo — para las siguientes tarjetas de un carrusel. Sin numerar, sin hashtags, sin emoji, sin comillas."
+  "carousel_tips": ["Consejo concreto de 5 a 8 palabras", "Otro consejo distinto de 5 a 8 palabras", "Tercer consejo distinto de 5 a 8 palabras"]
 }
+Cada carousel_tip debe salir del contenido del artículo y evitar números, hashtags, emoji y comillas.
 PROMPT;
 
-        $raw = $this->textGenerator->generate($prompt, [
-            'system' => 'Eres un community manager experto en jardinería. Devuelve solo JSON válido.',
-            'max_tokens' => 500,
-        ]);
+        try {
+            $raw = $this->textGenerator->generate($prompt, [
+                'system' => 'Eres un community manager experto en jardinería. Devuelve solo JSON válido.',
+                'max_tokens' => 500,
+                'timeout' => 30,
+                'attempts' => 1,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Could not generate social copy, using article text', [
+                'post_id' => $post->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            $raw = '';
+        }
 
         $data = $this->parseJsonObject($raw);
         $tips = is_array($data['carousel_tips'] ?? null) ? $data['carousel_tips'] : [];
+        $hook = $this->copyString($data['social_hook'] ?? null, Str::limit($title, 50, ''));
+        $accent = $this->copyString($data['social_hook_accent'] ?? null, '');
+
+        if ($accent === '' || mb_strlen($accent) >= mb_strlen($hook)
+            || ! preg_match('/\s'.preg_quote($accent, '/').'$/iu', $hook)) {
+            $accent = '';
+        } else {
+            $accent = mb_substr($hook, -mb_strlen($accent));
+        }
 
         return [
-            'social_hook' => trim($data['social_hook'] ?? Str::limit($post->title, 50, '')),
-            'fb_body' => trim($data['fb_body'] ?? ($excerpt !== '' ? $excerpt : $title)),
-            'ig_body' => trim($data['ig_body'] ?? ($excerpt !== '' ? $excerpt : $title)),
+            'social_hook' => $hook,
+            'social_hook_accent' => $accent,
+            'fb_body' => $this->copyString($data['fb_body'] ?? null, $excerpt !== '' ? $excerpt : $title),
+            'ig_body' => $this->copyString($data['ig_body'] ?? null, $excerpt !== '' ? $excerpt : $title),
             'carousel_tips' => collect($tips)->filter(fn ($tip) => is_string($tip) && trim($tip) !== '')->map(fn ($tip) => trim($tip))->take(3)->values()->all(),
         ];
+    }
+
+    private function copyString(mixed $value, string $fallback): string
+    {
+        $text = is_string($value) ? trim($value) : '';
+
+        return $text !== '' ? $text : $fallback;
     }
 
     /**
@@ -121,7 +153,7 @@ PROMPT;
     }
 
     /**
-     * Build the carousel: a hero slide (cover photo + hook) followed by up to
+     * Build the carousel: a hero slide (portrait photo + hook) followed by up to
      * 3 tip slides, each using one of the post's own inline images as the
      * background. Every slide is composited deterministically (GD), so the
      * copy is never missing or garbled — what happened when we asked the
@@ -129,36 +161,59 @@ PROMPT;
      *
      * Returns the list of stored slide URLs, hero first. A tip slide that
      * fails to compose is skipped rather than failing the whole post; if the
-     * hero itself fails, falls back to the plain cover/background so the post
-     * still has something to publish.
+     * hero background fails, a branded forest card keeps the text visible.
      *
      * @return list<string>
      */
-    private function generateSocialSlides(Post $post, string $hook, array $tips): array
+    private function generateSocialSlides(Post $post, string $hook, array $tips, string $accent = ''): array
     {
         $category = $post->category ?? 'Jardinería';
         $slides = [];
-        $heroBackground = null;
+        $backgrounds = [];
 
-        try {
-            $heroBackground = $post->cover_image ?: $this->generateBackground($post);
-            $slides[] = $this->composeSlide($heroBackground, $hook, $category);
-        } catch (\Throwable $e) {
-            Log::error('Failed to build hero social card, falling back to plain background', [
-                'post_id' => $post->id,
-                'error' => $e->getMessage(),
-            ]);
+        if ($this->imageGenerator->isSynchronous()) {
+            try {
+                $backgrounds[] = $this->generateBackground($post);
+            } catch (\Throwable $e) {
+                Log::warning('Could not generate portrait social background', [
+                    'post_id' => $post->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
-            // The overlay may have failed after we got a background, or the
-            // background itself may never have been generated — only use it
-            // if we actually have one.
-            if ($heroBackground) {
-                $slides[] = $heroBackground;
+        if ($post->cover_image) {
+            $backgrounds[] = $post->cover_image;
+        }
+
+        if ($backgrounds === [] && ! $this->imageGenerator->isSynchronous()) {
+            return [];
+        }
+
+        foreach (array_unique($backgrounds) as $background) {
+            try {
+                $slides[] = $this->composeSlide($background, $hook, $category, $accent);
+
+                break;
+            } catch (\Throwable $e) {
+                Log::warning('Could not compose social hero from background', [
+                    'post_id' => $post->id,
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
 
         if ($slides === []) {
-            return [];
+            try {
+                $slides[] = $this->storeCard($this->imageComposer->forestFallback($hook, $category, $accent));
+            } catch (\Throwable $e) {
+                Log::error('Could not store branded social fallback', [
+                    'post_id' => $post->id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                return [];
+            }
         }
 
         $tipBackgrounds = $this->tipBackgroundUrls($post, count($tips));
@@ -184,13 +239,29 @@ PROMPT;
     /**
      * Download a background, overlay the card text on it, and store the result.
      */
-    private function composeSlide(string $backgroundUrl, string $text, string $category): string
+    private function composeSlide(string $backgroundUrl, string $text, string $category, string $accent = ''): string
     {
-        $backgroundBytes = Http::timeout(120)->get($backgroundUrl)->body();
-        $card = $this->imageComposer->overlay($backgroundBytes, $text, $category);
+        if (! filter_var($backgroundUrl, FILTER_VALIDATE_URL)
+            || ! in_array(parse_url($backgroundUrl, PHP_URL_SCHEME), ['http', 'https'], true)) {
+            throw new \RuntimeException('Social background is not a URL.');
+        }
 
+        $response = Http::timeout(10)->get($backgroundUrl);
+
+        if (! $response->successful()) {
+            throw new \RuntimeException('Could not download social background.');
+        }
+
+        return $this->storeCard($this->imageComposer->overlay($response->body(), $text, $category, $accent));
+    }
+
+    private function storeCard(string $card): string
+    {
         $path = 'social/'.uniqid('card-', true).'.png';
-        Storage::disk('s3')->put($path, $card, ['visibility' => 'public']);
+
+        if (! Storage::disk('s3')->put($path, $card, ['visibility' => 'public'])) {
+            throw new \RuntimeException('Could not store the social card.');
+        }
 
         return Storage::disk('s3')->url($path);
     }
@@ -220,8 +291,7 @@ PROMPT;
     }
 
     /**
-     * Ask the image model for a text-free background photo. Only used when the
-     * post has no cover image of its own.
+     * Ask a synchronous image model for a dedicated text-free portrait photo.
      */
     private function generateBackground(Post $post): string
     {
@@ -230,15 +300,16 @@ PROMPT;
 
         // Background ONLY — the model must not render any text; we overlay it.
         $prompt = <<<PROMPT
-Create a stunning background photograph for a gardening social media card.
+Create a natural editorial botanical photograph for a gardening social media card.
 
 Theme of the article: "{$title}" (category: {$category}).
 
 Style requirements:
 - Portrait format (4:5 aspect ratio) for Instagram and Facebook
-- Vibrant plant photography with cinematic, natural lighting
-- Rich composition that leaves the upper-left area visually calm for a text overlay
-- Modern editorial aesthetic, shallow depth of field
+- Authentic plants, garden textures, natural light, and rich forest greens
+- Keep the upper-left area visually calm and darker for a large title overlay
+- Keep the middle and lower photo open to show the plants; avoid a central subject blocking the text
+- Photographic, warm, believable, with subtle depth of field
 - IMPORTANT: absolutely NO text, NO letters, NO words, NO logos, NO watermarks anywhere in the image
 PROMPT;
 
@@ -246,6 +317,9 @@ PROMPT;
             'aspectRatio' => '4:5',
             'quality' => 'high',
             'directory' => 'social',
+            'timeout' => 120,
+            'attempts' => 1,
+            'download_timeout' => 10,
         ]);
     }
 
